@@ -12,7 +12,7 @@ from pathlib import Path
 from app.database import Base, engine, SessionLocal
 from app.models import Location
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 FILES = [
     "대전_충청권_관광지.json",
