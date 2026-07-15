@@ -76,6 +76,7 @@ const mode = ref('recommend')
 const draft = ref('')
 const messages = ref(loadMessages())
 const isLoading = ref(false)
+const isComposing = ref(false)
 const messageList = ref(null)
 const inputBox = ref(null)
 
@@ -123,7 +124,10 @@ function closeChat() {
 function clearHistory() {
   messages.value = [createWelcomeMessage()]
   draft.value = ''
-  nextTick(() => inputBox.value?.focus())
+  nextTick(() => {
+    resetInputHeight()
+    inputBox.value?.focus()
+  })
 }
 
 function changeMode(nextMode) {
@@ -142,8 +146,24 @@ function resizeInput(event) {
   element.style.height = `${Math.min(element.scrollHeight, 96)}px`
 }
 
+function resetInputHeight() {
+  if (inputBox.value) inputBox.value.style.height = 'auto'
+}
+
+function handleEnter(event) {
+  if (event.isComposing || isComposing.value || event.shiftKey) return
+  event.preventDefault()
+  sendMessage()
+}
+
 function makeId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function historyContent(item) {
+  if (item.role !== 'assistant' || !item.sources?.length) return item.content
+  const titles = item.sources.map((source) => source.title).filter(Boolean).slice(0, 8)
+  return titles.length ? `${item.content}\n[화면에 표시된 결과: ${titles.join(', ')}]` : item.content
 }
 
 async function sendMessage(text = draft.value) {
@@ -153,7 +173,7 @@ async function sendMessage(text = draft.value) {
   const history = messages.value
     .filter((item) => ['user', 'assistant'].includes(item.role))
     .slice(-8)
-    .map(({ role, content }) => ({ role, content }))
+    .map((item) => ({ role: item.role, content: historyContent(item).slice(0, 2000) }))
 
   messages.value.push({
     id: makeId('user'),
@@ -165,6 +185,7 @@ async function sendMessage(text = draft.value) {
   draft.value = ''
   isLoading.value = true
   await nextTick()
+  resetInputHeight()
   scrollToBottom()
 
   try {
@@ -174,6 +195,9 @@ async function sendMessage(text = draft.value) {
       mode: mode.value,
       apiBaseUrl: props.apiBaseUrl,
     })
+    if (modes.some((item) => item.id === response.mode)) {
+      mode.value = response.mode
+    }
     messages.value.push({
       id: makeId('assistant'),
       role: 'assistant',
@@ -181,6 +205,9 @@ async function sendMessage(text = draft.value) {
       sources: response.sources || [],
       suggestions: response.suggestions || [],
       fallback: Boolean(response.fallback),
+      engine: response.engine || 'local',
+      notice: response.notice || '',
+      errorCode: response.error_code || '',
     })
   } catch (error) {
     messages.value.push({
@@ -207,6 +234,10 @@ function selectSource(source) {
       detail: source,
     }),
   )
+}
+
+function handleImageError(event) {
+  event.currentTarget.style.display = 'none'
 }
 
 function ratingLabel(source) {
@@ -321,6 +352,20 @@ function eventDateLabel(source) {
               <p :class="['message-bubble', { error: message.isError }]">
                 {{ message.content }}
               </p>
+              <span
+                v-if="message.engine"
+                :class="['engine-badge', { openai: message.engine === 'openai' }]"
+              >
+                {{ message.engine === 'openai' ? 'GPT-5 mini' : 'LocalHub 데이터' }}
+              </span>
+              <p
+                v-if="message.notice"
+                class="system-notice"
+                :title="message.errorCode || undefined"
+              >
+                <strong>AI 연결 안내</strong>
+                {{ message.notice }}
+              </p>
 
               <div v-if="message.sources?.length" class="source-list">
                 <article
@@ -329,17 +374,18 @@ function eventDateLabel(source) {
                   class="source-card"
                 >
                   <div v-if="source.type === 'location'" class="source-image">
+                    <div class="image-placeholder" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M4 18V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12H4Zm0-3 4-4 3 3 2-2 5 5M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+                      </svg>
+                    </div>
                     <img
                       v-if="source.image_url"
                       :src="source.image_url"
                       :alt="`${source.title} 사진`"
                       loading="lazy"
+                      @error="handleImageError"
                     />
-                    <div v-else class="image-placeholder" aria-hidden="true">
-                      <svg viewBox="0 0 24 24">
-                        <path d="M4 18V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12H4Zm0-3 4-4 3 3 2-2 5 5M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
-                      </svg>
-                    </div>
                   </div>
                   <div class="source-body">
                     <div class="source-topline">
@@ -422,7 +468,9 @@ function eventDateLabel(source) {
             aria-label="챗봇에게 질문하기"
             :disabled="isLoading"
             @input="resizeInput"
-            @keydown.enter.exact.prevent="sendMessage()"
+            @compositionstart="isComposing = true"
+            @compositionend="isComposing = false"
+            @keydown.enter="handleEnter"
           ></textarea>
           <button
             type="submit"
@@ -735,6 +783,41 @@ function eventDateLabel(source) {
   border-color: #efc6c6;
 }
 
+.engine-badge {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 6px;
+  color: #77727e;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  background: #f1eff3;
+  border-radius: 999px;
+}
+
+.engine-badge.openai {
+  color: #6550a5;
+  background: #f0ebff;
+}
+
+.system-notice {
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  color: #725b20;
+  font-size: 10.5px;
+  line-height: 1.45;
+  background: #fff9e8;
+  border: 1px solid #ead9a4;
+  border-radius: 8px;
+}
+
+.system-notice strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #5e4913;
+}
+
 .source-list {
   display: grid;
   gap: 8px;
@@ -757,6 +840,7 @@ function eventDateLabel(source) {
 }
 
 .source-image {
+  position: relative;
   width: 92px;
   min-height: 112px;
   flex: 0 0 92px;
@@ -764,6 +848,8 @@ function eventDateLabel(source) {
 }
 
 .source-image img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;

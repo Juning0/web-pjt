@@ -1,4 +1,4 @@
-from sqlalchemy import func, desc, asc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app import models, schemas

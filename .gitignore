@@ -7,11 +7,14 @@ __pycache__/
 venv/
 .venv/
 
-# SQLite (초기 데이터 포함 .db는 별도 제출 산출물이므로
-# 개발 중 로컬 DB는 제외. 제출 시점에 seed로 생성한 파일을 제출)
+# SQLite (실행 환경에서 python seed.py로 생성)
 *.db
 *.db-shm
 *.db-wal
+
+# Vue / Vite
+node_modules/
+dist/
 
 # IDE
 .vscode/

@@ -1,9 +1,9 @@
 # LocalHub Backend (FastAPI + SQLite)
 
-대전/충청권 지역 정보 공유 커뮤니티 백엔드. 챗봇 제외 BE 전체.
+대전/충청권 지역 정보 공유 커뮤니티와 챗봇을 함께 제공하는 통합 백엔드.
 
 ## 기술 스택
-FastAPI · SQLAlchemy 2.0 · SQLite · Pydantic v2 · uvicorn
+FastAPI · SQLAlchemy 2.0 · SQLite · Pydantic v2 · OpenAI Responses API · uvicorn
 
 ## 프로젝트 구조
 ```
@@ -15,11 +15,15 @@ localhub-backend/
 │   ├── models.py        # locations / posts / comments
 │   ├── schemas.py       # Pydantic 요청·응답
 │   ├── crud.py          # DB 조작 로직
+│   ├── chat_service.py  # 의도 분석 + 답변 생성(gpt-5-mini 고정)
+│   ├── chat_data_service.py # 관광 JSON + DB 검색
+│   ├── chat_schemas.py  # 챗봇 요청·응답 스키마
 │   └── routers/
 │       ├── locations.py # 공공데이터 읽기 전용
 │       ├── posts.py     # 게시판 CRUD (비번검증+평점)
-│       └── comments.py  # 댓글 CRUD
-├── data/                # 제공 JSON 8개 (여기에 넣기)
+│       ├── comments.py  # 댓글 CRUD
+│       └── chat.py      # POST /api/chat
+├── ../data/             # 프로젝트 루트의 제공 JSON 8개
 ├── seed.py              # JSON → SQLite 적재
 ├── requirements.txt
 ├── .env.example         # 복사해서 .env 로 사용
@@ -29,19 +33,18 @@ localhub-backend/
 ## 로컬 실행
 ```bash
 # 1) 가상환경 + 의존성
-python -m venv venv && source venv/bin/activate   # win: venv\Scripts\activate
+python -m venv .venv
+source .venv/Scripts/activate   # Windows Git Bash
 pip install -r requirements.txt
 
 # 2) 환경변수
 cp .env.example .env
 
-# 3) 제공 JSON 8개를 data/ 폴더에 복사
-
-# 4) 초기 데이터 적재 (→ localhub.db 생성, 총 1,365건)
+# 3) 초기 데이터 적재 (→ localhub.db 생성, 총 1,365건)
 python seed.py
 
-# 5) 서버 실행
-uvicorn app.main:app --reload
+# 4) 서버 실행
+python -m uvicorn app.main:app --reload
 # 문서: http://127.0.0.1:8000/docs
 ```
 
@@ -69,6 +72,14 @@ uvicorn app.main:app --reload
 |--------|------|------|
 | POST | `/api/posts/{id}/comments` | 작성 |
 | POST | `/api/posts/comments/{id}/delete` | 삭제 (비번 필요) |
+
+### 챗봇
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | `/api/chat` | JSON 기반 자연어 질의응답 |
+| GET | `/api/chat/health` | 데이터·키·고정 모델 상태 확인 |
+
+OpenAI 키는 `.env`의 `OPENAI_API_KEY`에만 저장합니다. 모델은 `gpt-5-mini`로 고정됩니다.
 
 ## Render 배포 메모
 - Build: `pip install -r requirements.txt`
