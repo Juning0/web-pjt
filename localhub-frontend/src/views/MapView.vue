@@ -1,22 +1,35 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
-import { CATEGORIES } from '@/constants/categories'
+import { CATEGORIES, toLocationCategory } from '@/constants/categories'
+import { getLocation, listAllLocations } from '@/api/locations'
 import { loadKakaoMaps } from '@/utils/kakaoMap'
 
-// 백엔드 CORS 허용 전까지 실 API(GET /api/locations) 대신 mock 데이터로 표시
-const places = ref([
-  { content_id: 'map-1', category: '음식점', title: '성심당 본점', addr1: '대전광역시 중구 대종로 480', first_image: '', avg_rating: 4.8, review_count: 1204, lat: 36.3266, lng: 127.4246 },
-  { content_id: 'map-2', category: '관광지', title: '대전오월드', addr1: '대전광역시 중구 사정공원로 70', first_image: '', avg_rating: 4.7, review_count: 892, lat: 36.2873, lng: 127.4001 },
-  { content_id: 'map-3', category: '문화시설', title: '한밭수목원', addr1: '대전광역시 서구 둔산대로 169', first_image: '', avg_rating: 4.5, review_count: 543, lat: 36.3654, lng: 127.3868 },
-  { content_id: 'map-4', category: '관광지', title: '대청호반 자전거길', addr1: '대전광역시 대덕구 대청로 618-136', first_image: '', avg_rating: 4.6, review_count: 376, lat: 36.4744, lng: 127.4815 },
-  { content_id: 'map-5', category: '숙박', title: '유성호텔', addr1: '대전광역시 유성구 온천로 76', first_image: '', avg_rating: 4.3, review_count: 210, lat: 36.3546, lng: 127.3413 },
-  { content_id: 'map-6', category: '문화시설', title: '국립중앙과학관', addr1: '대전광역시 유성구 대덕대로 481', first_image: '', avg_rating: 4.6, review_count: 802, lat: 36.3745, lng: 127.3742 },
-  { content_id: 'map-7', category: '관광지', title: '장태산 휴양림', addr1: '대전광역시 서구 장척로 461', first_image: '', avg_rating: 4.7, review_count: 512, lat: 36.2589, lng: 127.3324 },
-  { content_id: 'map-8', category: '음식점', title: '중앙시장 튀김골목', addr1: '대전광역시 동구 중앙로 200', first_image: '', avg_rating: 4.2, review_count: 398, lat: 36.3283, lng: 127.4302 },
-  { content_id: 'map-9', category: '레포츠', title: '갑천 자전거길', addr1: '대전광역시 유성구 갑천동로', first_image: '', avg_rating: 4.1, review_count: 164, lat: 36.3612, lng: 127.3556 },
-  { content_id: 'map-10', category: '축제·행사', title: '대전 사이언스 페스티벌', addr1: '대전광역시 유성구 대덕대로 480', first_image: '', avg_rating: 4.4, review_count: 190, lat: 36.3745, lng: 127.3845 },
-])
+const places = ref([])
+const isPlacesLoading = ref(false)
+const placesError = ref('')
+
+// 카테고리 다중 선택 시 카테고리별로 나눠 조회한 뒤 합친다(백엔드는 카테고리 단일 필터만 지원).
+async function fetchPlaces() {
+  isPlacesLoading.value = true
+  placesError.value = ''
+  try {
+    const categories = selectedCategories.value.length ? selectedCategories.value : [undefined]
+    const lists = await Promise.all(
+      categories.map((category) =>
+        listAllLocations({ category: category ? toLocationCategory(category) : undefined }),
+      ),
+    )
+    const merged = new Map()
+    lists.flat().forEach((item) => merged.set(item.content_id, item))
+    places.value = Array.from(merged.values())
+  } catch (error) {
+    placesError.value = error.message || '장소를 불러오지 못했어요.'
+  } finally {
+    isPlacesLoading.value = false
+  }
+  renderMarkers()
+}
 
 const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
   <path d="M16 0C7.163 0 0 7.163 0 16c0 11 16 24 16 24s16-13 16-24C32 7.163 24.837 0 16 0z" fill="#7e66e2"/>
@@ -32,19 +45,19 @@ const selectedCategories = ref([])
 const searchKeyword = ref('')
 const selectedPlace = ref(null)
 const isPlaceModalOpen = ref(false)
+const isPlaceDetailLoading = ref(false)
 const locateError = ref('')
 let locateErrorTimer
 
 const visiblePlaces = computed(() => {
+  // places는 fetchPlaces()가 이미 선택된 카테고리로 서버에서 걸러 받아온 결과라 여기서는 키워드만 거른다.
   const trimmedKeyword = searchKeyword.value.trim().toLowerCase()
   return places.value.filter((place) => {
-    const matchesCategory =
-      selectedCategories.value.length === 0 || selectedCategories.value.includes(place.category)
     const matchesKeyword =
       !trimmedKeyword ||
       place.title.toLowerCase().includes(trimmedKeyword) ||
       place.addr1.toLowerCase().includes(trimmedKeyword)
-    return matchesCategory && matchesKeyword
+    return matchesKeyword
   })
 })
 
@@ -71,12 +84,21 @@ function toggleCategory(category) {
       ? selectedCategories.value.filter((item) => item !== category)
       : [...selectedCategories.value, category]
   }
-  renderMarkers()
+  fetchPlaces()
 }
 
-function openPlace(place) {
-  selectedPlace.value = place
+async function openPlace(place) {
   isPlaceModalOpen.value = true
+  isPlaceDetailLoading.value = true
+  selectedPlace.value = null
+  try {
+    selectedPlace.value = await getLocation(place.content_id)
+  } catch {
+    // 상세 조회에 실패해도 목록 데이터로는 계속 보여준다.
+    selectedPlace.value = place
+  } finally {
+    isPlaceDetailLoading.value = false
+  }
 }
 
 function closePlaceModal() {
@@ -180,10 +202,10 @@ onMounted(async () => {
       ],
     })
     isMapReady.value = true
-    renderMarkers()
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
   }
+  fetchPlaces()
 })
 
 onUnmounted(() => {
@@ -256,11 +278,13 @@ onUnmounted(() => {
         </div>
 
         <div class="map-list-header">총 {{ visiblePlaces.length }}곳</div>
-        <ul v-if="visiblePlaces.length" class="map-list">
+        <p v-if="isPlacesLoading" class="map-list-empty">장소를 불러오는 중...</p>
+        <p v-else-if="placesError" class="map-list-empty">{{ placesError }}</p>
+        <ul v-else-if="visiblePlaces.length" class="map-list">
           <li v-for="place in visiblePlaces" :key="place.content_id" @click="focusPlace(place)">
             <span class="map-list-category">{{ place.category }}</span>
             <h3>{{ place.title }}</h3>
-            <p class="map-list-rating">★ {{ place.avg_rating.toFixed(1) }} · {{ place.addr1 }}</p>
+            <p class="map-list-rating">{{ place.addr1 }}</p>
           </li>
         </ul>
         <p v-else class="map-list-empty">조건에 맞는 장소가 없어요.</p>
@@ -330,6 +354,7 @@ onUnmounted(() => {
     <PlaceDetailModal
       :place="selectedPlace"
       :open="isPlaceModalOpen"
+      :loading="isPlaceDetailLoading"
       @close="closePlaceModal"
       @select-location="handleSelectLocation"
     />

@@ -2,6 +2,8 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { randomNickname } from '@/utils/nickname'
 import { eventDateLabel } from '@/utils/date'
+import { getLocation } from '@/api/locations'
+import { createPost } from '@/api/posts'
 
 const props = defineProps({
   place: {
@@ -12,12 +14,16 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  loading: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['close', 'select-location'])
 
-// 백엔드 CORS 허용 전까지는 props.place(mock)를 그대로 보여주고,
-// 리뷰 등록도 서버 호출 없이 화면에서만 반영한다.
+// 이 장소에 대한 "리뷰"는 별도 API가 없고, location_id를 채운 게시글(Post)이 곧 리뷰다.
+// 리뷰 등록 후에는 장소 상세를 다시 조회해 서버가 계산한 avg_rating/review_count를 반영한다.
 const location = ref(null)
 
 const isReviewFormOpen = ref(false)
@@ -100,18 +106,29 @@ function handleViewOnMap() {
   })
 }
 
-function submitReview() {
+async function submitReview() {
   if (!location.value || isSubmitting.value) return
+  if (!reviewTitle.value.trim() || !reviewContent.value.trim() || !reviewPassword.value.trim()) {
+    submitError.value = '제목, 내용, 비밀번호를 모두 입력해 주세요.'
+    return
+  }
+
   isSubmitting.value = true
   submitError.value = ''
 
-  // 백엔드 CORS 허용 전까지는 실제 등록 없이 화면에서만 평점을 반영한다.
-  window.setTimeout(() => {
-    const prevCount = location.value.review_count || 0
-    const prevTotal = (location.value.avg_rating || 0) * prevCount
-    const nextCount = prevCount + 1
-    location.value.review_count = nextCount
-    location.value.avg_rating = (prevTotal + reviewRating.value) / nextCount
+  try {
+    // 이 장소의 리뷰는 별도 API가 없고, location_id를 채운 게시글이 곧 리뷰다.
+    await createPost({
+      category: location.value.category,
+      title: reviewTitle.value.trim(),
+      content: `[${reviewNickname.value.trim()}] ${reviewContent.value.trim()}`,
+      password: reviewPassword.value.trim(),
+      rating: reviewRating.value,
+      location_id: location.value.content_id,
+    })
+
+    // avg_rating/review_count는 서버가 계산하므로 등록 후 상세를 다시 조회한다.
+    location.value = await getLocation(location.value.content_id)
 
     submitSuccess.value = true
     isReviewFormOpen.value = false
@@ -120,8 +137,11 @@ function submitReview() {
     reviewPassword.value = ''
     reviewRating.value = 5
     reviewNickname.value = randomNickname()
+  } catch (error) {
+    submitError.value = error.message || '리뷰 등록에 실패했어요.'
+  } finally {
     isSubmitting.value = false
-  }, 400)
+  }
 }
 </script>
 
@@ -144,7 +164,8 @@ function submitReview() {
           </header>
 
           <div class="modal-body">
-            <template v-if="location">
+            <p v-if="loading" class="loading-text">불러오는 중...</p>
+            <template v-else-if="location">
               <span class="category-pill">{{ location.category }}</span>
               <h2 class="place-title">{{ location.title }}</h2>
 
@@ -346,6 +367,13 @@ function submitReview() {
 .modal-body {
   padding: 18px 20px 24px;
   overflow-y: auto;
+}
+
+.loading-text {
+  padding: 40px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
 }
 
 .category-pill {

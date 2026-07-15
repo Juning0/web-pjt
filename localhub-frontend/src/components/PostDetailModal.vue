@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { parseAuthoredContent, randomNickname } from '@/utils/nickname'
+import { createComment, deleteComment, deletePost, updatePost } from '@/api/posts'
 
 const props = defineProps({
   post: {
@@ -11,12 +12,16 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  loading: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['close', 'deleted'])
 
-// 백엔드 CORS 허용 전까지는 props.post(mock)를 그대로 보여주고,
-// 댓글 등록·삭제도 서버 호출 없이 화면에서만 반영한다.
+// 좋아요는 백엔드에 없는 필드라 이 컴포넌트 안에서만 관리한다(post.like_count/is_liked).
+// 나머지(본문·댓글·수정·삭제)는 실제 API를 호출한다.
 const post = ref(null)
 
 const isDeleteConfirmOpen = ref(false)
@@ -27,10 +32,12 @@ const commentContent = ref('')
 const commentPassword = ref('')
 const commentNickname = ref(randomNickname())
 const isSubmittingComment = ref(false)
+const commentFormError = ref('')
 
 const activeCommentDeleteId = ref(null)
 const commentDeletePassword = ref('')
 const commentDeleteError = ref('')
+const isDeletingComment = ref(false)
 
 const isEditFormOpen = ref(false)
 const editTitle = ref('')
@@ -38,24 +45,30 @@ const editContent = ref('')
 const editRating = ref(0)
 const editPassword = ref('')
 const editFormError = ref('')
+const isSavingEdit = ref(false)
+const isDeletingPost = ref(false)
 
 function resetInteractionState() {
   isDeleteConfirmOpen.value = false
   deletePassword.value = ''
   deleteError.value = ''
+  isDeletingPost.value = false
   commentContent.value = ''
   commentPassword.value = ''
   commentNickname.value = randomNickname()
   isSubmittingComment.value = false
+  commentFormError.value = ''
   activeCommentDeleteId.value = null
   commentDeletePassword.value = ''
   commentDeleteError.value = ''
+  isDeletingComment.value = false
   isEditFormOpen.value = false
   editTitle.value = ''
   editContent.value = ''
   editRating.value = 0
   editPassword.value = ''
   editFormError.value = ''
+  isSavingEdit.value = false
 }
 
 watch(
@@ -155,7 +168,7 @@ function cancelEditForm() {
   editFormError.value = ''
 }
 
-function saveEdit() {
+async function saveEdit() {
   if (!editTitle.value.trim() || !editContent.value.trim()) {
     editFormError.value = '제목과 내용을 입력해 주세요.'
     return
@@ -164,12 +177,25 @@ function saveEdit() {
     editFormError.value = '비밀번호를 입력해 주세요.'
     return
   }
+  if (isSavingEdit.value) return
 
-  post.value.title = editTitle.value.trim()
-  post.value.content = `[${authorContent.value.nickname}] ${editContent.value.trim()}`
-  post.value.rating = editRating.value || null
-  post.value.updated_at = new Date().toISOString()
-  cancelEditForm()
+  isSavingEdit.value = true
+  editFormError.value = ''
+  try {
+    const updated = await updatePost(post.value.id, {
+      password: editPassword.value.trim(),
+      title: editTitle.value.trim(),
+      content: `[${authorContent.value.nickname}] ${editContent.value.trim()}`,
+      rating: editRating.value || null,
+    })
+    // like_count/is_liked는 서버 응답에 없는 클라이언트 전용 필드라 그대로 유지된다.
+    Object.assign(post.value, updated)
+    cancelEditForm()
+  } catch (error) {
+    editFormError.value = error.message || '수정에 실패했어요.'
+  } finally {
+    isSavingEdit.value = false
+  }
 }
 
 function openDeleteConfirm() {
@@ -183,13 +209,24 @@ function cancelDeleteConfirm() {
   deleteError.value = ''
 }
 
-function confirmDelete() {
+async function confirmDelete() {
   if (!deletePassword.value.trim()) {
     deleteError.value = '비밀번호를 입력해 주세요.'
     return
   }
-  emit('deleted', post.value.id)
-  emit('close')
+  if (isDeletingPost.value) return
+
+  isDeletingPost.value = true
+  deleteError.value = ''
+  try {
+    await deletePost(post.value.id, deletePassword.value.trim())
+    emit('deleted', post.value.id)
+    emit('close')
+  } catch (error) {
+    deleteError.value = error.message || '삭제에 실패했어요.'
+  } finally {
+    isDeletingPost.value = false
+  }
 }
 
 function openCommentDeleteConfirm(commentId) {
@@ -204,32 +241,46 @@ function cancelCommentDelete() {
   commentDeleteError.value = ''
 }
 
-function confirmCommentDelete(commentId) {
+async function confirmCommentDelete(commentId) {
   if (!commentDeletePassword.value.trim()) {
     commentDeleteError.value = '비밀번호를 입력해 주세요.'
     return
   }
-  post.value.comments = post.value.comments.filter((comment) => comment.id !== commentId)
-  cancelCommentDelete()
+  if (isDeletingComment.value) return
+
+  isDeletingComment.value = true
+  commentDeleteError.value = ''
+  try {
+    await deleteComment(commentId, commentDeletePassword.value.trim())
+    post.value.comments = post.value.comments.filter((comment) => comment.id !== commentId)
+    cancelCommentDelete()
+  } catch (error) {
+    commentDeleteError.value = error.message || '삭제에 실패했어요.'
+  } finally {
+    isDeletingComment.value = false
+  }
 }
 
-function submitComment() {
+async function submitComment() {
   if (!post.value || isSubmittingComment.value) return
   if (!commentContent.value.trim() || !commentPassword.value.trim() || !commentNickname.value.trim()) return
 
   isSubmittingComment.value = true
-  window.setTimeout(() => {
-    post.value.comments.push({
-      id: Date.now(),
-      post_id: post.value.id,
+  commentFormError.value = ''
+  try {
+    const created = await createComment(post.value.id, {
       content: `[${commentNickname.value.trim()}] ${commentContent.value.trim()}`,
-      created_at: new Date().toISOString(),
+      password: commentPassword.value.trim(),
     })
+    post.value.comments.push(created)
     commentContent.value = ''
     commentPassword.value = ''
     commentNickname.value = randomNickname()
+  } catch (error) {
+    commentFormError.value = error.message || '댓글 등록에 실패했어요.'
+  } finally {
     isSubmittingComment.value = false
-  }, 300)
+  }
 }
 </script>
 
@@ -249,7 +300,7 @@ function submitComment() {
                 <path d="m15 5-7 7 7 7" />
               </svg>
             </button>
-            <div class="header-actions">
+            <div v-if="post && !loading" class="header-actions">
               <button class="text-action" type="button" @click="openEditForm">수정</button>
               <span class="header-divider" aria-hidden="true"></span>
               <button class="text-action danger" type="button" @click="openDeleteConfirm">삭제</button>
@@ -257,7 +308,8 @@ function submitComment() {
           </header>
 
           <div class="modal-body">
-            <template v-if="post">
+            <p v-if="loading" class="loading-text">불러오는 중...</p>
+            <template v-else-if="post">
               <template v-if="!isEditFormOpen">
                 <span class="category-pill">{{ post.category }}</span>
                 <h2 class="post-title">{{ post.title }}</h2>
@@ -299,7 +351,14 @@ function submitComment() {
                   />
                   <div class="delete-confirm-actions">
                     <button type="button" class="ghost-button" @click="cancelDeleteConfirm">취소</button>
-                    <button type="button" class="danger-button" @click="confirmDelete">삭제</button>
+                    <button
+                      type="button"
+                      class="danger-button"
+                      :disabled="isDeletingPost"
+                      @click="confirmDelete"
+                    >
+                      {{ isDeletingPost ? '삭제 중...' : '삭제' }}
+                    </button>
                   </div>
                   <p v-if="deleteError" class="form-error">{{ deleteError }}</p>
                 </div>
@@ -342,7 +401,14 @@ function submitComment() {
 
                 <div class="edit-form-actions">
                   <button type="button" class="ghost-button" @click="cancelEditForm">취소</button>
-                  <button type="button" class="submit-button" @click="saveEdit">저장</button>
+                  <button
+                    type="button"
+                    class="submit-button"
+                    :disabled="isSavingEdit"
+                    @click="saveEdit"
+                  >
+                    {{ isSavingEdit ? '저장 중...' : '저장' }}
+                  </button>
                 </div>
               </div>
 
@@ -382,9 +448,10 @@ function submitComment() {
                         <button
                           type="button"
                           class="danger-button-sm"
+                          :disabled="isDeletingComment"
                           @click="confirmCommentDelete(comment.id)"
                         >
-                          삭제
+                          {{ isDeletingComment ? '삭제 중...' : '삭제' }}
                         </button>
                       </div>
                       <p v-if="commentDeleteError" class="form-error">{{ commentDeleteError }}</p>
@@ -427,6 +494,7 @@ function submitComment() {
                   <button class="submit-button" type="submit" :disabled="isSubmittingComment">
                     {{ isSubmittingComment ? '등록 중...' : '댓글 남기기' }}
                   </button>
+                  <p v-if="commentFormError" class="form-error">{{ commentFormError }}</p>
                 </form>
               </div>
             </template>
@@ -546,6 +614,13 @@ function submitComment() {
 .modal-body {
   padding: 18px 20px 24px;
   overflow-y: auto;
+}
+
+.loading-text {
+  padding: 40px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
 }
 
 .category-pill {
