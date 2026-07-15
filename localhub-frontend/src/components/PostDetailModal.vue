@@ -32,8 +32,12 @@ const activeCommentDeleteId = ref(null)
 const commentDeletePassword = ref('')
 const commentDeleteError = ref('')
 
-const editToast = ref('')
-let editToastTimer
+const isEditFormOpen = ref(false)
+const editTitle = ref('')
+const editContent = ref('')
+const editRating = ref(0)
+const editPassword = ref('')
+const editFormError = ref('')
 
 function resetInteractionState() {
   isDeleteConfirmOpen.value = false
@@ -46,7 +50,12 @@ function resetInteractionState() {
   activeCommentDeleteId.value = null
   commentDeletePassword.value = ''
   commentDeleteError.value = ''
-  editToast.value = ''
+  isEditFormOpen.value = false
+  editTitle.value = ''
+  editContent.value = ''
+  editRating.value = 0
+  editPassword.value = ''
+  editFormError.value = ''
 }
 
 watch(
@@ -127,15 +136,44 @@ watch(
 
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
-function handleEditClick() {
-  editToast.value = '수정 기능은 곧 추가될 예정이에요.'
-  window.clearTimeout(editToastTimer)
-  editToastTimer = window.setTimeout(() => {
-    editToast.value = ''
-  }, 2400)
+function openEditForm() {
+  isDeleteConfirmOpen.value = false
+  editTitle.value = post.value.title
+  editContent.value = authorContent.value.body
+  editRating.value = post.value.rating || 0
+  editPassword.value = ''
+  editFormError.value = ''
+  isEditFormOpen.value = true
+}
+
+function cancelEditForm() {
+  isEditFormOpen.value = false
+  editTitle.value = ''
+  editContent.value = ''
+  editRating.value = 0
+  editPassword.value = ''
+  editFormError.value = ''
+}
+
+function saveEdit() {
+  if (!editTitle.value.trim() || !editContent.value.trim()) {
+    editFormError.value = '제목과 내용을 입력해 주세요.'
+    return
+  }
+  if (!editPassword.value.trim()) {
+    editFormError.value = '비밀번호를 입력해 주세요.'
+    return
+  }
+
+  post.value.title = editTitle.value.trim()
+  post.value.content = `[${authorContent.value.nickname}] ${editContent.value.trim()}`
+  post.value.rating = editRating.value || null
+  post.value.updated_at = new Date().toISOString()
+  cancelEditForm()
 }
 
 function openDeleteConfirm() {
+  isEditFormOpen.value = false
   isDeleteConfirmOpen.value = true
 }
 
@@ -212,7 +250,7 @@ function submitComment() {
               </svg>
             </button>
             <div class="header-actions">
-              <button class="text-action" type="button" @click="handleEditClick">수정</button>
+              <button class="text-action" type="button" @click="openEditForm">수정</button>
               <span class="header-divider" aria-hidden="true"></span>
               <button class="text-action danger" type="button" @click="openDeleteConfirm">삭제</button>
             </div>
@@ -220,52 +258,95 @@ function submitComment() {
 
           <div class="modal-body">
             <template v-if="post">
-              <span class="category-pill">{{ post.category }}</span>
-              <h2 class="post-title">{{ post.title }}</h2>
+              <template v-if="!isEditFormOpen">
+                <span class="category-pill">{{ post.category }}</span>
+                <h2 class="post-title">{{ post.title }}</h2>
 
-              <div class="rating-row">
-                <span class="stars">{{ starDisplay }}</span>
-                <span class="rating-label">{{ ratingLabel }}</span>
-              </div>
+                <div class="rating-row">
+                  <span class="stars">{{ starDisplay }}</span>
+                  <span class="rating-label">{{ ratingLabel }}</span>
+                </div>
 
-              <p class="meta-line">{{ metaLabel }}</p>
+                <p class="meta-line">{{ metaLabel }}</p>
 
-              <button
-                type="button"
-                class="like-button"
-                :class="{ liked: post.is_liked }"
-                :aria-pressed="post.is_liked"
-                @click="toggleLike"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    d="M12 20.5s-7.5-4.6-10-9.3C.5 8 2 4.5 5.5 4c2-.3 3.8.6 5 2.3C11.7 4.6 13.5 3.7 15.5 4c3.5.5 5 4 3.5 7.2-2.5 4.7-10 9.3-10 9.3Z"
+                <button
+                  type="button"
+                  class="like-button"
+                  :class="{ liked: post.is_liked }"
+                  :aria-pressed="post.is_liked"
+                  @click="toggleLike"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 20.5s-7.5-4.6-10-9.3C.5 8 2 4.5 5.5 4c2-.3 3.8.6 5 2.3C11.7 4.6 13.5 3.7 15.5 4c3.5.5 5 4 3.5 7.2-2.5 4.7-10 9.3-10 9.3Z"
+                    />
+                  </svg>
+                  좋아요 {{ post.like_count || 0 }}
+                </button>
+
+                <p class="author-line">
+                  <span class="author-badge">{{ authorContent.nickname }}</span>
+                </p>
+                <p class="post-content">{{ authorContent.body }}</p>
+
+                <div v-if="isDeleteConfirmOpen" class="delete-confirm">
+                  <p>정말 삭제할까요? 비밀번호를 입력해 주세요.</p>
+                  <input
+                    v-model="deletePassword"
+                    type="password"
+                    class="text-input"
+                    placeholder="비밀번호"
                   />
-                </svg>
-                좋아요 {{ post.like_count || 0 }}
-              </button>
+                  <div class="delete-confirm-actions">
+                    <button type="button" class="ghost-button" @click="cancelDeleteConfirm">취소</button>
+                    <button type="button" class="danger-button" @click="confirmDelete">삭제</button>
+                  </div>
+                  <p v-if="deleteError" class="form-error">{{ deleteError }}</p>
+                </div>
+              </template>
 
-              <p class="author-line">
-                <span class="author-badge">{{ authorContent.nickname }}</span>
-              </p>
-              <p class="post-content">{{ authorContent.body }}</p>
+              <div v-else class="edit-form">
+                <span class="category-pill">{{ post.category }}</span>
 
-              <div v-if="isDeleteConfirmOpen" class="delete-confirm">
-                <p>정말 삭제할까요? 비밀번호를 입력해 주세요.</p>
+                <div class="rating-picker" role="radiogroup" aria-label="별점 선택">
+                  <button
+                    v-for="value in 5"
+                    :key="value"
+                    type="button"
+                    :class="['star-button', { filled: value <= editRating }]"
+                    :aria-pressed="value <= editRating"
+                    :aria-label="`${value}점`"
+                    @click="editRating = value"
+                  >★</button>
+                </div>
+
                 <input
-                  v-model="deletePassword"
+                  v-model="editTitle"
+                  class="text-input"
+                  maxlength="200"
+                  placeholder="제목"
+                />
+                <textarea
+                  v-model="editContent"
+                  class="text-area"
+                  placeholder="내용을 입력하세요..."
+                ></textarea>
+                <input
+                  v-model="editPassword"
                   type="password"
                   class="text-input"
                   placeholder="비밀번호"
                 />
-                <div class="delete-confirm-actions">
-                  <button type="button" class="ghost-button" @click="cancelDeleteConfirm">취소</button>
-                  <button type="button" class="danger-button" @click="confirmDelete">삭제</button>
+
+                <p v-if="editFormError" class="form-error">{{ editFormError }}</p>
+
+                <div class="edit-form-actions">
+                  <button type="button" class="ghost-button" @click="cancelEditForm">취소</button>
+                  <button type="button" class="submit-button" @click="saveEdit">저장</button>
                 </div>
-                <p v-if="deleteError" class="form-error">{{ deleteError }}</p>
               </div>
 
-              <div class="comment-section">
+              <div v-if="!isEditFormOpen" class="comment-section">
                 <h3 class="comment-heading">댓글 {{ post.comments.length }}</h3>
 
                 <ul v-if="post.comments.length" class="comment-list">
@@ -350,10 +431,6 @@ function submitComment() {
               </div>
             </template>
           </div>
-
-          <Transition name="modal-toast-fade">
-            <p v-if="editToast" class="inline-toast" role="status">{{ editToast }}</p>
-          </Transition>
         </section>
       </div>
     </Transition>
@@ -815,30 +892,45 @@ function submitComment() {
   font-size: 11.5px;
 }
 
-.inline-toast {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  padding: 9px 14px;
-  margin: 0;
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 650;
-  background: var(--ink);
-  border-radius: 999px;
-  box-shadow: 0 10px 24px rgb(35 32 42 / 26%);
-  transform: translateX(-50%);
+.edit-form {
+  display: flex;
+  gap: 9px;
+  flex-direction: column;
 }
 
-.modal-toast-fade-enter-active,
-.modal-toast-fade-leave-active {
-  transition: opacity 160ms ease, transform 160ms ease;
+.edit-form .category-pill {
+  align-self: flex-start;
 }
 
-.modal-toast-fade-enter-from,
-.modal-toast-fade-leave-to {
-  opacity: 0;
-  transform: translate(-50%, 8px);
+.rating-picker {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.star-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #d8d5db;
+  font-size: 19px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.star-button.filled {
+  color: var(--star);
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-form-actions .ghost-button,
+.edit-form-actions .submit-button {
+  flex: 1;
 }
 
 .modal-fade-enter-active,
