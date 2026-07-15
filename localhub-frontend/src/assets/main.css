@@ -67,10 +67,12 @@
 }
 
 .search-bar button,
-.community-banner > button {
+.community-banner > button,
+.community-link-button {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
+  text-decoration: none;
   background: #29272e;
   border: 1px solid #29272e;
   border-radius: 8px;
@@ -494,10 +496,14 @@ main {
   font-size: 13px;
 }
 
-.community-banner > button {
+.community-banner > button,
+.community-link-button {
+  display: inline-flex;
   min-height: 43px;
   padding: 0 18px;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
 }
 
 .event-toast {
