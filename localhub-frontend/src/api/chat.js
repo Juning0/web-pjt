@@ -6,7 +6,7 @@ const DEFAULT_API_BASE_URL = (
 
 export async function requestChat({ message, history, mode, apiBaseUrl }) {
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 35_000)
+  const timeoutId = window.setTimeout(() => controller.abort(), 90_000)
   const baseUrl = (apiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/$/, '')
 
   try {
@@ -21,7 +21,15 @@ export async function requestChat({ message, history, mode, apiBaseUrl }) {
       let detail = ''
       try {
         const payload = await response.json()
-        detail = payload.detail ? `: ${payload.detail}` : ''
+        if (typeof payload.detail === 'string') {
+          detail = `: ${payload.detail}`
+        } else if (Array.isArray(payload.detail)) {
+          const messages = payload.detail
+            .map((item) => item?.msg)
+            .filter(Boolean)
+            .join(', ')
+          detail = messages ? `: ${messages}` : ''
+        }
       } catch {
         // The response body is not JSON. The status code is enough for the user message.
       }

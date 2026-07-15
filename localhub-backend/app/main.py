@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import posts, comments, locations
+from app.routers import chat, comments, locations, posts
 
 # 앱 시작 시 테이블 생성 (없으면 생성).
 # 실제 초기 데이터 적재는 seed.py 로 수행.
@@ -12,7 +12,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="LocalHub API",
     description="대전/충청권 지역 정보 공유 커뮤니티 백엔드",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -26,9 +26,14 @@ app.add_middleware(
 app.include_router(locations.router)
 app.include_router(posts.router)
 app.include_router(comments.router)
-# 챗봇 라우터(현준님)는 이후 app.include_router(chat.router) 로 추가
+app.include_router(chat.router)
 
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "LocalHub API"}
+    return {
+        "status": "ok",
+        "service": "LocalHub API",
+        "docs": "/docs",
+        "chat_health": "/api/chat/health",
+    }

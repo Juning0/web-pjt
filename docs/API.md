@@ -245,6 +245,59 @@ POST /api/posts/comments/{comment_id}/delete
 
 ---
 
+## 4. 챗봇 (chat)
+
+### 4-1. 챗봇 상태
+
+```text
+GET /api/chat/health
+```
+
+키 값 자체는 반환하지 않으며, 설정 여부만 확인할 수 있습니다.
+
+```json
+{
+  "status": "ok",
+  "locations_loaded": 1365,
+  "openai_configured": true,
+  "model": "gpt-5-mini",
+  "data_source": "bundled JSON + LocalHub SQLite"
+}
+```
+
+### 4-2. 자연어 질의응답
+
+```text
+POST /api/chat
+```
+
+**요청 body**
+
+```json
+{
+  "message": "대전 관광지랑 음식점 숙소 하나씩 알려줘",
+  "history": [],
+  "mode": "auto"
+}
+```
+
+`mode`는 `auto`, `recommend`, `posts`, `faq` 중 하나이며 기본값은 `auto`입니다. `history`에는 최근 사용자·챗봇 메시지를 최대 20개 전달합니다.
+
+**응답 200 주요 필드**
+
+| 필드 | 설명 |
+|------|------|
+| `answer` | 사용자에게 표시할 한국어 답변 |
+| `sources` | 장소 또는 게시글 카드 데이터 |
+| `suggestions` | 후속 질문 버튼 |
+| `engine` | `openai` 또는 로컬 검색 답변인 `local` |
+| `notice` | 키·권한·한도·연결 오류 안내 |
+| `error_code` | 프론트엔드에서 구분 가능한 오류 코드 |
+
+챗봇은 제공 JSON, LocalHub 평점, LocalHub 게시글만 근거로 답하며 웹 검색·예약·게시글 작성은 수행하지 않습니다.
+
+---
+
 ## 데이터 출처
 
 한국관광공사 Tour API(TourAPI 4.0) 활용.

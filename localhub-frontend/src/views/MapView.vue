@@ -1,8 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
 import { CATEGORIES } from '@/constants/categories'
 import { loadKakaoMaps } from '@/utils/kakaoMap'
+
+const route = useRoute()
 
 // 백엔드 CORS 허용 전까지 실 API(GET /api/locations) 대신 mock 데이터로 표시
 const places = ref([
@@ -57,6 +60,7 @@ let mapInstance = null
 let kakaoRef = null
 let clusterer = null
 let markers = []
+let highlightedMarker = null
 
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
@@ -84,8 +88,61 @@ function closePlaceModal() {
 }
 
 function handleSelectLocation(source) {
-  if (!mapInstance || !kakaoRef || source.lat == null || source.lng == null) return
-  mapInstance.panTo(new kakaoRef.maps.LatLng(source.lat, source.lng))
+  const latitude = source.latitude ?? source.lat
+  const longitude = source.longitude ?? source.lng
+  if (!mapInstance || !kakaoRef || latitude == null || longitude == null) return
+  mapInstance.panTo(new kakaoRef.maps.LatLng(latitude, longitude))
+}
+
+function firstQueryValue(value) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function routeLocation() {
+  const latitude = Number(firstQueryValue(route.query.lat))
+  const longitude = Number(firstQueryValue(route.query.lng))
+  const title = firstQueryValue(route.query.title)
+  if (!title || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+
+  const ratingValue = Number(firstQueryValue(route.query.rating))
+  const reviewValue = Number(firstQueryValue(route.query.reviews))
+  return {
+    content_id: firstQueryValue(route.query.id) || `chat-${latitude}-${longitude}`,
+    title,
+    category: firstQueryValue(route.query.category) || '장소',
+    addr1: firstQueryValue(route.query.address) || '',
+    first_image: firstQueryValue(route.query.image) || '',
+    avg_rating: Number.isFinite(ratingValue) ? ratingValue : null,
+    review_count: Number.isFinite(reviewValue) ? reviewValue : 0,
+    lat: latitude,
+    lng: longitude,
+  }
+}
+
+function focusRouteLocation() {
+  if (!mapInstance || !kakaoRef) return
+  highlightedMarker?.setMap(null)
+  highlightedMarker = null
+
+  const place = routeLocation()
+  if (!place) return
+
+  const position = new kakaoRef.maps.LatLng(place.lat, place.lng)
+  const markerImage = new kakaoRef.maps.MarkerImage(
+    PIN_IMAGE_SRC,
+    new kakaoRef.maps.Size(32, 40),
+    { offset: new kakaoRef.maps.Point(16, 40) },
+  )
+  highlightedMarker = new kakaoRef.maps.Marker({
+    map: mapInstance,
+    position,
+    image: markerImage,
+    title: place.title,
+  })
+  kakaoRef.maps.event.addListener(highlightedMarker, 'click', () => openPlace(place))
+  mapInstance.setLevel(4)
+  mapInstance.panTo(position)
+  openPlace(place)
 }
 
 function clearMarkers() {
@@ -181,6 +238,7 @@ onMounted(async () => {
     })
     isMapReady.value = true
     renderMarkers()
+    focusRouteLocation()
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
   }
@@ -188,10 +246,18 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearMarkers()
+  highlightedMarker?.setMap(null)
+  highlightedMarker = null
   clusterer = null
   mapInstance = null
   kakaoRef = null
 })
+
+watch(
+  () => route.query,
+  () => focusRouteLocation(),
+  { deep: true },
+)
 </script>
 
 <template>
