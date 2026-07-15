@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import ChatWidget from '@/components/ChatWidget.vue'
+import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
 
 const toast = ref('')
 let toastTimer
@@ -11,6 +12,76 @@ function showIntegrationEvent(source) {
   toastTimer = window.setTimeout(() => {
     toast.value = ''
   }, 2800)
+}
+
+// 백엔드 CORS 허용 전까지 실 API 대신 mock 데이터로 표시
+const places = ref([
+  {
+    content_id: 'mock-1',
+    category: '관광지',
+    title: '대전의 새로운 발견',
+    addr1: '대전광역시 유성구 대덕대로 480',
+    tel: '',
+    lat: 36.3745,
+    lng: 127.3845,
+    first_image: '',
+    avg_rating: 4.0,
+    review_count: 128,
+  },
+  {
+    content_id: 'mock-2',
+    category: '음식점',
+    title: '현지인이 찾는 맛집',
+    addr1: '대전광역시 중구 대종로 480',
+    tel: '',
+    lat: 36.3255,
+    lng: 127.4215,
+    first_image: '',
+    avg_rating: 4.6,
+    review_count: 342,
+  },
+  {
+    content_id: 'mock-3',
+    category: '문화시설',
+    title: '주말 문화 산책',
+    addr1: '대전광역시 서구 둔산대로 116',
+    tel: '',
+    lat: 36.3505,
+    lng: 127.3845,
+    first_image: '',
+    avg_rating: 3.8,
+    review_count: 56,
+  },
+])
+
+const CATEGORIES = ['관광지', '음식점', '숙박', '문화시설', '축제·행사']
+const selectedCategories = ref([])
+
+function isCategoryActive(category) {
+  if (category === '전체') return selectedCategories.value.length === 0
+  return selectedCategories.value.includes(category)
+}
+
+function toggleCategory(category) {
+  if (category === '전체') {
+    selectedCategories.value = []
+    return
+  }
+  selectedCategories.value = isCategoryActive(category)
+    ? selectedCategories.value.filter((item) => item !== category)
+    : [...selectedCategories.value, category]
+}
+
+const selectedPlace = ref(null)
+const isPlaceModalOpen = ref(false)
+
+function openPlace(place) {
+  selectedPlace.value = place
+  isPlaceModalOpen.value = true
+}
+
+function closePlaceModal() {
+  isPlaceModalOpen.value = false
 }
 </script>
 
@@ -26,7 +97,6 @@ function showIntegrationEvent(source) {
         <a href="#recommend">추천</a>
         <a href="#community">커뮤니티</a>
       </nav>
-      <button type="button">로그인</button>
     </header>
 
     <main>
@@ -42,13 +112,24 @@ function showIntegrationEvent(source) {
           <input aria-label="지역 또는 장소 검색" placeholder="지역 또는 장소를 검색해 보세요" />
           <button type="submit">검색</button>
         </form>
-        <div class="category-chips" aria-label="장소 카테고리">
-          <button type="button" class="active">전체</button>
-          <button type="button">관광지</button>
-          <button type="button">음식점</button>
-          <button type="button">숙박</button>
-          <button type="button">문화시설</button>
-          <button type="button">축제·행사</button>
+        <div class="category-chips" aria-label="장소 카테고리 (중복 선택 가능)">
+          <button
+            type="button"
+            :class="{ active: isCategoryActive('전체') }"
+            @click="toggleCategory('전체')"
+          >
+            전체
+          </button>
+          <button
+            v-for="category in CATEGORIES"
+            :key="category"
+            type="button"
+            :class="{ active: isCategoryActive(category) }"
+            :aria-pressed="isCategoryActive(category)"
+            @click="toggleCategory(category)"
+          >
+            {{ category }}
+          </button>
         </div>
       </section>
 
@@ -61,14 +142,24 @@ function showIntegrationEvent(source) {
           <button type="button">전체 보기 <span aria-hidden="true">→</span></button>
         </div>
         <div class="place-grid">
-          <article v-for="card in 3" :key="card" class="place-card">
-            <div :class="['place-image', `image-${card}`]">
-              <span>{{ card === 1 ? '관광지' : card === 2 ? '음식점' : '문화시설' }}</span>
+          <article
+            v-for="place in places"
+            :key="place.content_id"
+            class="place-card"
+            @click="openPlace(place)"
+          >
+            <div class="place-image">
+              <img
+                v-if="place.first_image"
+                :src="place.first_image"
+                :alt="`${place.title} 사진`"
+                loading="lazy"
+              />
+              <span>{{ place.category }}</span>
             </div>
             <div class="place-body">
-              <h3>{{ ['대전의 새로운 발견', '현지인이 찾는 맛집', '주말 문화 산책'][card - 1] }}</h3>
-              <p><span class="stars">★★★★★</span> 아직 등록된 리뷰가 없어요</p>
-              <small>대전·충청권 지역 정보</small>
+              <h3>{{ place.title }}</h3>
+              <small>{{ place.addr1 }}</small>
             </div>
           </article>
         </div>
@@ -91,6 +182,13 @@ function showIntegrationEvent(source) {
     <ChatWidget
       @select-location="showIntegrationEvent"
       @select-post="showIntegrationEvent"
+    />
+
+    <PlaceDetailModal
+      :place="selectedPlace"
+      :open="isPlaceModalOpen"
+      @close="closePlaceModal"
+      @select-location="showIntegrationEvent"
     />
   </div>
 </template>
