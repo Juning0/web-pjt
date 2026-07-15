@@ -2,6 +2,7 @@
 import { onUnmounted, ref, watch } from 'vue'
 import { CATEGORIES } from '@/constants/categories'
 import { randomNickname } from '@/utils/nickname'
+import { createPost } from '@/api/posts'
 
 const props = defineProps({
   open: {
@@ -64,7 +65,7 @@ watch(
 
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
-function submitPost() {
+async function submitPost() {
   if (isSubmitting.value) return
 
   if (!selectedCategory.value) {
@@ -79,25 +80,20 @@ function submitPost() {
   formError.value = ''
   isSubmitting.value = true
 
-  // 백엔드 CORS 허용 전까지는 서버 호출 없이 새 게시글 객체를 그대로 부모에 전달한다.
-  window.setTimeout(() => {
-    const now = new Date().toISOString()
-    emit('created', {
-      id: Date.now(),
+  try {
+    const created = await createPost({
       category: selectedCategory.value,
       title: title.value.trim(),
       content: `[${nickname.value.trim()}] ${content.value.trim()}`,
+      password: password.value.trim(),
       rating: rating.value || null,
-      view_count: 0,
-      location_id: null,
-      created_at: now,
-      updated_at: now,
-      comments: [],
-      like_count: 0,
-      is_liked: false,
     })
+    emit('created', created)
+  } catch (error) {
+    formError.value = error.message || '게시글 등록에 실패했어요.'
+  } finally {
     isSubmitting.value = false
-  }, 300)
+  }
 }
 </script>
 
