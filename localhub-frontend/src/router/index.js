@@ -14,6 +14,11 @@ const router = createRouter({
       name: 'board',
       component: () => import('@/views/BoardListView.vue'),
     },
+    {
+      path: '/map',
+      name: 'map',
+      component: () => import('@/views/MapView.vue'),
+    },
   ],
   scrollBehavior(to) {
     if (to.hash) return { el: to.hash, behavior: 'smooth' }

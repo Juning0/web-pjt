@@ -26,6 +26,7 @@ provide('showIntegrationEvent', showIntegrationEvent)
       <nav aria-label="주요 메뉴">
         <RouterLink to="/#explore">둘러보기</RouterLink>
         <RouterLink to="/#recommend">추천</RouterLink>
+        <RouterLink to="/map">지도</RouterLink>
         <RouterLink to="/board">커뮤니티</RouterLink>
       </nav>
     </header>
