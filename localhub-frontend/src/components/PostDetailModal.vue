@@ -1,0 +1,874 @@
+<script setup>
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { parseAuthoredContent, randomNickname } from '@/utils/nickname'
+
+const props = defineProps({
+  post: {
+    type: Object,
+    default: null,
+  },
+  open: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+const emit = defineEmits(['close', 'deleted'])
+
+// 백엔드 CORS 허용 전까지는 props.post(mock)를 그대로 보여주고,
+// 댓글 등록·삭제도 서버 호출 없이 화면에서만 반영한다.
+const post = ref(null)
+
+const isDeleteConfirmOpen = ref(false)
+const deletePassword = ref('')
+const deleteError = ref('')
+
+const commentContent = ref('')
+const commentPassword = ref('')
+const commentNickname = ref(randomNickname())
+const isSubmittingComment = ref(false)
+
+const activeCommentDeleteId = ref(null)
+const commentDeletePassword = ref('')
+const commentDeleteError = ref('')
+
+const editToast = ref('')
+let editToastTimer
+
+function resetInteractionState() {
+  isDeleteConfirmOpen.value = false
+  deletePassword.value = ''
+  deleteError.value = ''
+  commentContent.value = ''
+  commentPassword.value = ''
+  commentNickname.value = randomNickname()
+  isSubmittingComment.value = false
+  activeCommentDeleteId.value = null
+  commentDeletePassword.value = ''
+  commentDeleteError.value = ''
+  editToast.value = ''
+}
+
+watch(
+  () => [props.open, props.post],
+  ([isOpen, nextPost]) => {
+    if (isOpen && nextPost) {
+      resetInteractionState()
+      // 부모가 들고 있는 같은 객체를 그대로 참조해서, 댓글·좋아요 변경이 다시 열어도 유지되게 한다.
+      post.value = nextPost
+    }
+  },
+  { immediate: true },
+)
+
+function toggleLike() {
+  if (!post.value) return
+  if (post.value.is_liked) {
+    post.value.like_count = Math.max(0, (post.value.like_count || 0) - 1)
+    post.value.is_liked = false
+  } else {
+    post.value.like_count = (post.value.like_count || 0) + 1
+    post.value.is_liked = true
+  }
+}
+
+const authorContent = computed(() => parseAuthoredContent(post.value?.content))
+
+const ratingLabel = computed(() => {
+  if (!post.value || post.value.rating == null) return '평점 없음'
+  return `${post.value.rating.toFixed(1)}`
+})
+
+const starDisplay = computed(() => {
+  const rating = post.value?.rating || 0
+  return '★★★★★'.slice(0, rating).padEnd(5, '☆')
+})
+
+const metaLabel = computed(() => {
+  if (!post.value) return ''
+  const date = new Date(post.value.created_at)
+  const formatted = Number.isNaN(date.getTime())
+    ? post.value.created_at
+    : `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
+  return `조회 ${(post.value.view_count || 0).toLocaleString()} · ${formatted}`
+})
+
+function formatRelativeTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const diffMs = Date.now() - date.getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) return '방금 전'
+  if (minutes < 60) return `${minutes}분 전`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}시간 전`
+  const days = Math.floor(hours / 24)
+  return `${days}일 전`
+}
+
+function handleClose() {
+  emit('close')
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Escape') handleClose()
+}
+
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeydown)
+    } else {
+      window.removeEventListener('keydown', handleKeydown)
+    }
+  },
+)
+
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+
+function handleEditClick() {
+  editToast.value = '수정 기능은 곧 추가될 예정이에요.'
+  window.clearTimeout(editToastTimer)
+  editToastTimer = window.setTimeout(() => {
+    editToast.value = ''
+  }, 2400)
+}
+
+function openDeleteConfirm() {
+  isDeleteConfirmOpen.value = true
+}
+
+function cancelDeleteConfirm() {
+  isDeleteConfirmOpen.value = false
+  deletePassword.value = ''
+  deleteError.value = ''
+}
+
+function confirmDelete() {
+  if (!deletePassword.value.trim()) {
+    deleteError.value = '비밀번호를 입력해 주세요.'
+    return
+  }
+  emit('deleted', post.value.id)
+  emit('close')
+}
+
+function openCommentDeleteConfirm(commentId) {
+  activeCommentDeleteId.value = commentId
+  commentDeletePassword.value = ''
+  commentDeleteError.value = ''
+}
+
+function cancelCommentDelete() {
+  activeCommentDeleteId.value = null
+  commentDeletePassword.value = ''
+  commentDeleteError.value = ''
+}
+
+function confirmCommentDelete(commentId) {
+  if (!commentDeletePassword.value.trim()) {
+    commentDeleteError.value = '비밀번호를 입력해 주세요.'
+    return
+  }
+  post.value.comments = post.value.comments.filter((comment) => comment.id !== commentId)
+  cancelCommentDelete()
+}
+
+function submitComment() {
+  if (!post.value || isSubmittingComment.value) return
+  if (!commentContent.value.trim() || !commentPassword.value.trim() || !commentNickname.value.trim()) return
+
+  isSubmittingComment.value = true
+  window.setTimeout(() => {
+    post.value.comments.push({
+      id: Date.now(),
+      post_id: post.value.id,
+      content: `[${commentNickname.value.trim()}] ${commentContent.value.trim()}`,
+      created_at: new Date().toISOString(),
+    })
+    commentContent.value = ''
+    commentPassword.value = ''
+    commentNickname.value = randomNickname()
+    isSubmittingComment.value = false
+  }, 300)
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="open" class="modal-backdrop" @click.self="handleClose">
+        <section
+          class="post-modal"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="post?.title || '게시글 상세'"
+        >
+          <header class="modal-header">
+            <button class="icon-button" type="button" aria-label="닫기" @click="handleClose">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m15 5-7 7 7 7" />
+              </svg>
+            </button>
+            <div class="header-actions">
+              <button class="text-action" type="button" @click="handleEditClick">수정</button>
+              <span class="header-divider" aria-hidden="true"></span>
+              <button class="text-action danger" type="button" @click="openDeleteConfirm">삭제</button>
+            </div>
+          </header>
+
+          <div class="modal-body">
+            <template v-if="post">
+              <span class="category-pill">{{ post.category }}</span>
+              <h2 class="post-title">{{ post.title }}</h2>
+
+              <div class="rating-row">
+                <span class="stars">{{ starDisplay }}</span>
+                <span class="rating-label">{{ ratingLabel }}</span>
+              </div>
+
+              <p class="meta-line">{{ metaLabel }}</p>
+
+              <button
+                type="button"
+                class="like-button"
+                :class="{ liked: post.is_liked }"
+                :aria-pressed="post.is_liked"
+                @click="toggleLike"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 20.5s-7.5-4.6-10-9.3C.5 8 2 4.5 5.5 4c2-.3 3.8.6 5 2.3C11.7 4.6 13.5 3.7 15.5 4c3.5.5 5 4 3.5 7.2-2.5 4.7-10 9.3-10 9.3Z"
+                  />
+                </svg>
+                좋아요 {{ post.like_count || 0 }}
+              </button>
+
+              <p class="author-line">
+                <span class="author-badge">{{ authorContent.nickname }}</span>
+              </p>
+              <p class="post-content">{{ authorContent.body }}</p>
+
+              <div v-if="isDeleteConfirmOpen" class="delete-confirm">
+                <p>정말 삭제할까요? 비밀번호를 입력해 주세요.</p>
+                <input
+                  v-model="deletePassword"
+                  type="password"
+                  class="text-input"
+                  placeholder="비밀번호"
+                />
+                <div class="delete-confirm-actions">
+                  <button type="button" class="ghost-button" @click="cancelDeleteConfirm">취소</button>
+                  <button type="button" class="danger-button" @click="confirmDelete">삭제</button>
+                </div>
+                <p v-if="deleteError" class="form-error">{{ deleteError }}</p>
+              </div>
+
+              <div class="comment-section">
+                <h3 class="comment-heading">댓글 {{ post.comments.length }}</h3>
+
+                <ul v-if="post.comments.length" class="comment-list">
+                  <li v-for="comment in post.comments" :key="comment.id" class="comment-item">
+                    <div class="comment-topline">
+                      <span class="comment-nickname">
+                        {{ parseAuthoredContent(comment.content).nickname }}
+                      </span>
+                      <span class="comment-topline-right">
+                        <span class="comment-time">{{ formatRelativeTime(comment.created_at) }}</span>
+                        <button
+                          type="button"
+                          class="comment-delete"
+                          @click="openCommentDeleteConfirm(comment.id)"
+                        >
+                          삭제
+                        </button>
+                      </span>
+                    </div>
+                    <p class="comment-body">{{ parseAuthoredContent(comment.content).body }}</p>
+
+                    <div v-if="activeCommentDeleteId === comment.id" class="comment-delete-confirm">
+                      <input
+                        v-model="commentDeletePassword"
+                        type="password"
+                        class="text-input"
+                        placeholder="비밀번호"
+                      />
+                      <div class="comment-delete-actions">
+                        <button type="button" class="ghost-button-sm" @click="cancelCommentDelete">
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          class="danger-button-sm"
+                          @click="confirmCommentDelete(comment.id)"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                      <p v-if="commentDeleteError" class="form-error">{{ commentDeleteError }}</p>
+                    </div>
+                  </li>
+                </ul>
+                <p v-else class="comment-empty">아직 댓글이 없어요.</p>
+
+                <form class="comment-form" @submit.prevent="submitComment">
+                  <textarea
+                    v-model="commentContent"
+                    class="text-area"
+                    placeholder="댓글을 남겨보세요"
+                    required
+                  ></textarea>
+                  <div class="comment-form-row">
+                    <input
+                      v-model="commentNickname"
+                      class="text-input nickname-input"
+                      maxlength="20"
+                      placeholder="닉네임"
+                      required
+                    />
+                    <button
+                      type="button"
+                      class="nickname-suggest"
+                      title="닉네임 추천 받기"
+                      @click="commentNickname = randomNickname()"
+                    >
+                      추천
+                    </button>
+                  </div>
+                  <input
+                    v-model="commentPassword"
+                    type="password"
+                    class="text-input"
+                    placeholder="비밀번호"
+                    required
+                  />
+                  <button class="submit-button" type="submit" :disabled="isSubmittingComment">
+                    {{ isSubmittingComment ? '등록 중...' : '댓글 남기기' }}
+                  </button>
+                </form>
+              </div>
+            </template>
+          </div>
+
+          <Transition name="modal-toast-fade">
+            <p v-if="editToast" class="inline-toast" role="status">{{ editToast }}</p>
+          </Transition>
+        </section>
+      </div>
+    </Transition>
+  </Teleport>
+</template>
+
+<style scoped>
+.modal-backdrop,
+.post-modal,
+.post-modal * {
+  box-sizing: border-box;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  padding: 24px;
+  background: rgb(28 26 33 / 46%);
+  place-items: center;
+}
+
+.post-modal {
+  --ink: #28262f;
+  --muted: #716e78;
+  --line: #dedce3;
+  --soft: #f7f6f8;
+  --purple: #7e66e2;
+  --purple-soft: #f1edff;
+  --star: #e9a900;
+  position: relative;
+  display: flex;
+  width: min(420px, 100%);
+  max-height: min(720px, calc(100dvh - 48px));
+  overflow: hidden;
+  color: var(--ink);
+  font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 30px 70px rgb(24 20 32 / 30%);
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  min-height: 52px;
+  padding: 8px 14px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.icon-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  margin-left: -8px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  place-items: center;
+}
+
+.icon-button:hover {
+  background: var(--soft);
+}
+
+.icon-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.header-actions {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+
+.text-action {
+  padding: 4px 2px;
+  color: #56515d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.text-action:hover {
+  color: var(--ink);
+}
+
+.text-action.danger:hover {
+  color: #c0392b;
+}
+
+.header-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--line);
+}
+
+.modal-body {
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+}
+
+.category-pill {
+  display: inline-block;
+  padding: 5px 11px;
+  color: var(--purple);
+  font-size: 11px;
+  font-weight: 750;
+  background: var(--purple-soft);
+  border-radius: 999px;
+}
+
+.post-title {
+  margin: 12px 0 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.rating-row {
+  display: flex;
+  margin-top: 8px;
+  gap: 8px;
+  align-items: center;
+}
+
+.stars {
+  color: var(--star);
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+
+.rating-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.meta-line {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.like-button {
+  display: inline-flex;
+  padding: 7px 14px;
+  margin-top: 12px;
+  gap: 6px;
+  color: #56515d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fff;
+  border: 1px solid #d7d4db;
+  border-radius: 999px;
+  cursor: pointer;
+  align-items: center;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.like-button:hover {
+  border-color: var(--purple);
+}
+
+.like-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.like-button.liked {
+  color: var(--purple);
+  background: var(--purple-soft);
+  border-color: var(--purple);
+}
+
+.like-button.liked svg {
+  fill: currentColor;
+}
+
+.author-line {
+  margin: 16px 0 0;
+}
+
+.author-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  color: #56515d;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--soft);
+  border-radius: 999px;
+}
+
+.post-content {
+  margin: 10px 0 0;
+  color: #3c3842;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.delete-confirm {
+  padding: 14px;
+  margin-top: 18px;
+  background: #fff5f5;
+  border: 1px solid #efc6c6;
+  border-radius: 10px;
+}
+
+.delete-confirm > p {
+  margin: 0 0 9px;
+  color: #9b2f2f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  margin-top: 9px;
+  gap: 8px;
+}
+
+.ghost-button,
+.danger-button {
+  flex: 1;
+  min-height: 38px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ghost-button {
+  color: #56515d;
+  background: #fff;
+  border: 1px solid #d7d4db;
+}
+
+.danger-button {
+  color: #fff;
+  background: #c0392b;
+  border: 0;
+}
+
+.comment-section {
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.comment-heading {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.comment-list {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  gap: 12px;
+  list-style: none;
+  flex-direction: column;
+}
+
+.comment-item {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.comment-topline {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.comment-nickname {
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.comment-topline-right {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex: 0 0 auto;
+}
+
+.comment-time {
+  color: #a19da6;
+  font-size: 10.5px;
+}
+
+.comment-delete {
+  padding: 0;
+  color: #a19da6;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.comment-delete:hover {
+  color: #c0392b;
+}
+
+.comment-delete-confirm {
+  padding: 10px;
+  margin-top: 8px;
+  background: #fff5f5;
+  border: 1px solid #efc6c6;
+  border-radius: 9px;
+}
+
+.comment-delete-actions {
+  display: flex;
+  margin-top: 8px;
+  gap: 7px;
+}
+
+.ghost-button-sm,
+.danger-button-sm {
+  flex: 1;
+  min-height: 32px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ghost-button-sm {
+  color: #56515d;
+  background: #fff;
+  border: 1px solid #d7d4db;
+}
+
+.danger-button-sm {
+  color: #fff;
+  background: #c0392b;
+  border: 0;
+}
+
+.comment-body {
+  margin: 4px 0 0;
+  color: #3c3842;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.comment-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.comment-form {
+  display: flex;
+  margin-top: 16px;
+  gap: 9px;
+  flex-direction: column;
+}
+
+.comment-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.nickname-input {
+  flex: 1;
+}
+
+.nickname-suggest {
+  padding: 0 14px;
+  color: var(--purple);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--purple-soft);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.nickname-suggest:hover {
+  border-color: var(--purple);
+}
+
+.text-input,
+.text-area {
+  width: 100%;
+  padding: 10px 11px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  background: #fff;
+  border: 1px solid #cbc8d0;
+  border-radius: 9px;
+}
+
+.text-area {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.submit-button {
+  min-height: 42px;
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 750;
+  background: var(--purple);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.submit-button:disabled {
+  background: #c8bdf0;
+  cursor: not-allowed;
+}
+
+.form-error {
+  margin: 8px 0 0;
+  color: #9b2f2f;
+  font-size: 11.5px;
+}
+
+.inline-toast {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  padding: 9px 14px;
+  margin: 0;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 650;
+  background: var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgb(35 32 42 / 26%);
+  transform: translateX(-50%);
+}
+
+.modal-toast-fade-enter-active,
+.modal-toast-fade-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.modal-toast-fade-enter-from,
+.modal-toast-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 8px);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.modal-fade-enter-active .post-modal,
+.modal-fade-leave-active .post-modal {
+  transition: transform 180ms ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-from .post-modal,
+.modal-fade-leave-to .post-modal {
+  transform: translateY(10px) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-fade-enter-active,
+  .modal-fade-leave-active,
+  .modal-fade-enter-active .post-modal,
+  .modal-fade-leave-active .post-modal,
+  .modal-toast-fade-enter-active,
+  .modal-toast-fade-leave-active {
+    transition: none;
+  }
+}
+</style>
