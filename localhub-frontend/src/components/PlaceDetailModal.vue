@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { randomNickname } from '@/utils/nickname'
+import { eventDateLabel } from '@/utils/date'
 
 const props = defineProps({
   place: {
@@ -30,6 +31,7 @@ const submitSuccess = ref(false)
 const reviewNickname = ref(randomNickname())
 
 const hasCoords = computed(() => Boolean(location.value?.lat && location.value?.lng))
+const eventPeriod = computed(() => eventDateLabel(location.value))
 
 const ratingLabel = computed(() => {
   if (!location.value || location.value.avg_rating == null) return '아직 등록된 리뷰가 없어요'
@@ -168,6 +170,10 @@ function submitReview() {
               </div>
 
               <dl class="info-list">
+                <div v-if="eventPeriod" class="info-row">
+                  <dt>기간</dt>
+                  <dd>{{ eventPeriod }}</dd>
+                </div>
                 <div class="info-row">
                   <dt>주소</dt>
                   <dd>{{ location.addr1 || '주소 정보 없음' }}</dd>
