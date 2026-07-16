@@ -643,7 +643,8 @@ watch(
 .locate-button {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  /* 챗봇 FAB(58px, bottom 28px)와 겹치지 않도록 그 위에 쌓는다. */
+  bottom: 96px;
   z-index: 10;
   display: grid;
   width: 42px;
@@ -866,6 +867,11 @@ watch(
   .map-search.floating,
   .category-chips.floating {
     display: flex;
+  }
+
+  .locate-button {
+    /* 모바일 챗봇 FAB(bottom: max(18px, safe-area))보다 위에 오도록 맞춘다. */
+    bottom: max(86px, calc(env(safe-area-inset-bottom) + 86px));
   }
 }
 </style>
