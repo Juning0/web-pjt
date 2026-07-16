@@ -40,6 +40,13 @@ const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" 
 </svg>`
 const PIN_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PIN_SVG)}`
 
+// GPS 버튼으로 찾은 현재 위치는 장소 핀과 구분되는 파란 점으로 표시한다.
+const MY_LOCATION_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+  <circle cx="13" cy="13" r="11" fill="#4285f4" fill-opacity="0.18"/>
+  <circle cx="13" cy="13" r="6.5" fill="#4285f4" stroke="#fff" stroke-width="2.5"/>
+</svg>`
+const MY_LOCATION_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(MY_LOCATION_SVG)}`
+
 // 잘못된 좌표 한 건이 전체 지도 범위를 한국 밖까지 넓히지 않도록 방어한다.
 // LocalHub 데이터 범위(대전·충청)를 넉넉하게 포함하는 대한민국 영역이다.
 const KOREA_COORDINATE_BOUNDS = Object.freeze({
@@ -97,6 +104,7 @@ let kakaoRef = null
 let clusterer = null
 let markers = []
 let highlightedMarker = null
+let myLocationMarker = null
 
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
@@ -264,14 +272,28 @@ function locateMe() {
   navigator.geolocation.getCurrentPosition(
     (position) => {
       if (!mapInstance || !kakaoRef) return
+      const here = new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude)
       mapInstance.setLevel(5)
-      mapInstance.panTo(
-        new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude),
+      mapInstance.panTo(here)
+
+      myLocationMarker?.setMap(null)
+      const markerImage = new kakaoRef.maps.MarkerImage(
+        MY_LOCATION_IMAGE_SRC,
+        new kakaoRef.maps.Size(26, 26),
+        { offset: new kakaoRef.maps.Point(13, 13) },
       )
+      myLocationMarker = new kakaoRef.maps.Marker({
+        map: mapInstance,
+        position: here,
+        image: markerImage,
+        title: '현재 위치',
+        zIndex: 10,
+      })
     },
     () => {
       showLocateError('위치 정보를 가져오지 못했어요. 권한을 확인해 주세요.')
     },
+    { enableHighAccuracy: true, timeout: 10000 },
   )
 }
 
@@ -314,6 +336,8 @@ onUnmounted(() => {
   clearMarkers()
   highlightedMarker?.setMap(null)
   highlightedMarker = null
+  myLocationMarker?.setMap(null)
+  myLocationMarker = null
   clusterer = null
   mapInstance = null
   kakaoRef = null
@@ -618,7 +642,8 @@ watch(
 .locate-button {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  /* 우하단 챗봇 런처(58px, bottom 28px)와 겹치지 않도록 그 위쪽에 띄운다. */
+  bottom: 100px;
   z-index: 10;
   display: grid;
   width: 42px;
