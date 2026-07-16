@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import LocationSearchInput from '@/components/LocationSearchInput.vue'
 import PostDetailModal from '@/components/PostDetailModal.vue'
@@ -9,7 +9,8 @@ import { getPost, listAllPosts } from '@/api/posts'
 
 const showIntegrationEvent = inject('showIntegrationEvent')
 const route = useRoute()
-const PAGE_SIZE = 6
+const INITIAL_VISIBLE_COUNT = 12
+const LOAD_MORE_STEP = 9
 
 // 목록 API(PostListItem)는 본문·댓글이 없어, 상세를 열 때 getPost로 채운 뒤 같은 배열 항목에 캐싱한다.
 const posts = ref([])
@@ -96,25 +97,44 @@ const filteredPosts = computed(() => {
   return sorted
 })
 
-const currentPage = ref(1)
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredPosts.value.length / PAGE_SIZE)))
+const visibleCount = ref(INITIAL_VISIBLE_COUNT)
 
-const pagedPosts = computed(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE
-  return filteredPosts.value.slice(start, start + PAGE_SIZE)
-})
+const pagedPosts = computed(() => filteredPosts.value.slice(0, visibleCount.value))
+const hasMorePosts = computed(() => visibleCount.value < filteredPosts.value.length)
 
 watch(filteredPosts, () => {
-  currentPage.value = 1
+  visibleCount.value = INITIAL_VISIBLE_COUNT
+  fillTriggerIntoView()
 })
 
-function goToPrevPage() {
-  if (currentPage.value > 1) currentPage.value -= 1
+const loadMoreTrigger = ref(null)
+let scrollObserver = null
+
+// 로딩 직후처럼 트리거가 이미 화면 안에 들어와 있으면 IntersectionObserver의
+// "교차 상태 변화" 콜백이 다시 안 불릴 수 있어서, 트리거가 보이는 동안은 계속 채운다.
+async function fillTriggerIntoView() {
+  if (!hasMorePosts.value || !loadMoreTrigger.value) return
+  const rect = loadMoreTrigger.value.getBoundingClientRect()
+  if (rect.top > window.innerHeight + 400) return
+
+  visibleCount.value += LOAD_MORE_STEP
+  await nextTick()
+  await fillTriggerIntoView()
 }
 
-function goToNextPage() {
-  if (currentPage.value < totalPages.value) currentPage.value += 1
-}
+onMounted(() => {
+  scrollObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries[0]?.isIntersecting) fillTriggerIntoView()
+    },
+    { rootMargin: '400px' },
+  )
+  if (loadMoreTrigger.value) scrollObserver.observe(loadMoreTrigger.value)
+})
+
+onBeforeUnmount(() => {
+  scrollObserver?.disconnect()
+})
 
 const writeToast = ref('')
 let writeToastTimer
@@ -257,31 +277,9 @@ function handlePostCreated(newPost) {
 
     <p v-if="!isLoading && !loadError && filteredPosts.length === 0" class="post-empty">조건에 맞는 게시글이 없어요.</p>
 
-    <nav v-if="totalPages > 1" class="pagination" aria-label="게시글 페이지 이동">
-      <button
-        class="pagination-arrow"
-        type="button"
-        aria-label="이전 페이지"
-        :disabled="currentPage === 1"
-        @click="goToPrevPage"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m15 5-7 7 7 7" />
-        </svg>
-      </button>
-      <span class="pagination-count">{{ currentPage }} / {{ totalPages }}</span>
-      <button
-        class="pagination-arrow"
-        type="button"
-        aria-label="다음 페이지"
-        :disabled="currentPage === totalPages"
-        @click="goToNextPage"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m9 5 7 7-7 7" />
-        </svg>
-      </button>
-    </nav>
+    <div ref="loadMoreTrigger" class="load-more-trigger">
+      <p v-if="hasMorePosts" class="load-more-hint">더 불러오는 중...</p>
+    </div>
 
     <button class="write-fab" type="button" @click="openWriteModal">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -506,53 +504,15 @@ function handlePostCreated(newPost) {
   text-align: center;
 }
 
-.pagination {
-  display: flex;
+.load-more-trigger {
+  min-height: 1px;
   margin-top: 28px;
-  gap: 18px;
-  align-items: center;
-  justify-content: center;
 }
 
-.pagination-arrow {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  color: #29272e;
-  background: #fff;
-  border: 1px solid #d7d4db;
-  border-radius: 50%;
-  cursor: pointer;
-  place-items: center;
-  transition: border-color 160ms ease, color 160ms ease;
-}
-
-.pagination-arrow:hover:not(:disabled) {
-  color: #7e66e2;
-  border-color: #7e66e2;
-}
-
-.pagination-arrow:disabled {
-  color: #d0cdd4;
-  cursor: not-allowed;
-}
-
-.pagination-arrow svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-}
-
-.pagination-count {
-  min-width: 48px;
-  color: #29272e;
-  font-size: 13px;
-  font-weight: 700;
+.load-more-hint {
+  padding: 8px 0 4px;
+  color: #9b97a0;
+  font-size: 12.5px;
   text-align: center;
 }
 
@@ -636,10 +596,6 @@ function handlePostCreated(newPost) {
   }
 
   .post-empty {
-    font-size: 14px;
-  }
-
-  .pagination-count {
     font-size: 14px;
   }
 
