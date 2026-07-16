@@ -194,8 +194,8 @@ async function submitPost() {
   --purple: #7e66e2;
   --purple-soft: #f1edff;
   display: flex;
-  width: min(420px, 100%);
-  max-height: min(720px, calc(100dvh - 48px));
+  width: min(480px, 100%);
+  max-height: min(760px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--ink);
   font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

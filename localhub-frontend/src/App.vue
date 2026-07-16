@@ -64,14 +64,15 @@ provide('showIntegrationEvent', openLocationFromChat)
         <strong>LocalHub</strong>
       </RouterLink>
       <nav aria-label="주요 메뉴">
-        <RouterLink to="/#explore">둘러보기</RouterLink>
-        <RouterLink to="/#recommend">추천</RouterLink>
+        <RouterLink to="/explore">둘러보기</RouterLink>
         <RouterLink to="/map">지도</RouterLink>
         <RouterLink to="/board">커뮤니티</RouterLink>
       </nav>
     </header>
 
-    <RouterView />
+    <div class="page-shell">
+      <RouterView />
+    </div>
 
     <Transition name="toast">
       <p v-if="toast" class="event-toast" role="status">{{ toast }}</p>
