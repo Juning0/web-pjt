@@ -72,6 +72,11 @@ class Post(Base):
         "Comment", back_populates="post", cascade="all, delete-orphan"
     )
 
+    @property
+    def location_title(self):
+        """목록/상세에서 장소를 태그로 보여주기 위한 편의 속성."""
+        return self.location.title if self.location else None
+
 
 class Comment(Base):
     """게시글 댓글. 익명 + 수정용 비밀번호(평문)."""

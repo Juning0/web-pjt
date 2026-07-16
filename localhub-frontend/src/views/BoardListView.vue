@@ -1,188 +1,38 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import LocationSearchInput from '@/components/LocationSearchInput.vue'
 import PostDetailModal from '@/components/PostDetailModal.vue'
 import PostWriteModal from '@/components/PostWriteModal.vue'
 import { CATEGORIES } from '@/constants/categories'
+import { getPost, listAllPosts } from '@/api/posts'
 
 const route = useRoute()
 const PAGE_SIZE = 6
 
-// 백엔드 CORS 허용 전까지 실 API(GET /api/posts) 대신 PostDetail과 동일한 모양의 mock 데이터로 표시
-// (좋아요는 백엔드에 아예 없는 필드라 like_count/is_liked도 여기서만 관리한다)
-const posts = ref([
-  {
-    id: 1,
-    category: '관광지',
-    title: '대청호 벚꽃길 다녀왔어요',
-    content: '[활기찬 다람쥐] 대청호 벚꽃길 다녀왔어요! 주차는 오전 9시 전에 도착해야 여유롭고, 산책로는 왕복 1시간 정도 걸려요. 벚꽃 시즌엔 사람이 많으니 평일 방문을 추천합니다.',
-    rating: 4,
-    view_count: 1204,
-    location_id: null,
-    created_at: '2026-07-14T09:00:00',
-    updated_at: '2026-07-14T09:00:00',
-    comments: [
-      { id: 101, post_id: 1, content: '[지나가던 수현민] 정보 감사해요!', created_at: '2026-07-14T20:00:00' },
-      { id: 102, post_id: 1, content: '[든든한 너구리] 저도 이번 주말에 다녀와야겠어요', created_at: '2026-07-15T08:10:00' },
-      { id: 103, post_id: 1, content: '[상냥한 펭귄] 사진 너무 예뻐요 ㅠㅠ', created_at: '2026-07-15T09:30:00' },
-    ],
-  },
-  {
-    id: 2,
-    category: '문화시설',
-    title: '국립중앙과학관 나들이',
-    content: '[똑똑한 올빼미] 아이와 함께 다녀왔는데 체험 전시가 많아서 시간 가는 줄 몰랐어요. 주차는 무료였고 평일이라 한산했습니다.',
-    rating: 5,
-    view_count: 802,
-    location_id: null,
-    created_at: '2026-07-13T11:20:00',
-    updated_at: '2026-07-13T11:20:00',
-    comments: [
-      { id: 104, post_id: 2, content: '[용감한 고래] 저희 애가 정말 좋아하던 곳이에요', created_at: '2026-07-13T15:00:00' },
-    ],
-  },
-  {
-    id: 3,
-    category: '레포츠',
-    title: '세종 호수공원 러닝 코스 추천',
-    content: '[씩씩한 토끼] 호수 둘레길이 평탄해서 러닝하기 좋아요. 저녁엔 조명도 예쁘게 켜져서 야간 러닝도 추천합니다.',
-    rating: 4,
-    view_count: 455,
-    location_id: null,
-    created_at: '2026-07-12T18:40:00',
-    updated_at: '2026-07-12T18:40:00',
-    comments: [],
-  },
-  {
-    id: 4,
-    category: '쇼핑',
-    title: '청주 수암골 카페 거리 후기',
-    content: '[엉뚱한 감자] 골목마다 개성 있는 카페가 많아서 구경하는 재미가 쏠쏠해요. 주말엔 웨이팅이 좀 있는 편입니다.',
-    rating: 4,
-    view_count: 233,
-    location_id: null,
-    created_at: '2026-07-10T14:05:00',
-    updated_at: '2026-07-10T14:05:00',
-    comments: [],
-  },
-  {
-    id: 5,
-    category: '숙박',
-    title: '유성 온천 힐링 숙소 후기',
-    content: '[느긋한 수달] 온천 시설이 깨끗하고 조식도 맛있었어요. 다음에 또 이용하고 싶은 숙소입니다.',
-    rating: 5,
-    view_count: 610,
-    location_id: null,
-    created_at: '2026-07-09T20:15:00',
-    updated_at: '2026-07-09T20:15:00',
-    comments: [
-      { id: 105, post_id: 5, content: '[발랄한 당근] 저도 다음 달에 예약해봐야겠어요', created_at: '2026-07-10T09:00:00' },
-    ],
-  },
-  {
-    id: 6,
-    category: '음식점',
-    title: '성심당 빵지순례 다녀왔습니다',
-    content: '[유쾌한 호랑이] 튀김소보로는 역시 기본이고, 판타롱부추빵도 꼭 드셔보세요. 아침 일찍 가야 줄이 짧아요.',
-    rating: 5,
-    view_count: 980,
-    location_id: null,
-    created_at: '2026-07-15T08:30:00',
-    updated_at: '2026-07-15T08:30:00',
-    comments: [
-      { id: 106, post_id: 6, content: '[멋진 수박] 저도 오늘 다녀왔는데 진짜 맛있어요', created_at: '2026-07-15T12:00:00' },
-      { id: 107, post_id: 6, content: '[수줍은 고양이] 부추빵 추천 감사합니다', created_at: '2026-07-15T13:40:00' },
-    ],
-  },
-  {
-    id: 7,
-    category: '여행코스',
-    title: '계룡산 단풍 트레킹 코스',
-    content: '[잘생긴 다람쥐] 동학사에서 시작하는 코스가 초보자도 무리 없이 즐길 수 있어서 좋았어요. 편한 신발은 필수입니다.',
-    rating: 5,
-    view_count: 320,
-    location_id: null,
-    created_at: '2026-07-08T10:00:00',
-    updated_at: '2026-07-08T10:00:00',
-    comments: [],
-  },
-  {
-    id: 8,
-    category: '문화시설',
-    title: '한밭수목원 산책 기록',
-    content: '[상냥한 토끼] 규모가 커서 다 둘러보는 데 두 시간 정도 걸렸어요. 그늘이 많아서 여름에도 걷기 괜찮았습니다.',
-    rating: 4,
-    view_count: 275,
-    location_id: null,
-    created_at: '2026-07-11T16:50:00',
-    updated_at: '2026-07-11T16:50:00',
-    comments: [],
-  },
-  {
-    id: 9,
-    category: '축제·행사',
-    title: '대전 사이언스 페스티벌 다녀왔어요',
-    content: '[든든한 호랑이] 체험 부스가 정말 많아서 아이들이 지루할 틈이 없었어요. 주말엔 사람이 많아 오픈런을 추천합니다.',
-    rating: 4,
-    view_count: 190,
-    location_id: null,
-    created_at: '2026-07-15T13:10:00',
-    updated_at: '2026-07-15T13:10:00',
-    comments: [],
-  },
-  {
-    id: 10,
-    category: '관광지',
-    title: '장태산 휴양림 출렁다리 후기',
-    content: '[씩씩한 수달] 출렁다리에서 보는 뷰가 정말 좋아요. 편의시설도 잘 되어 있어서 가족 나들이로 추천합니다.',
-    rating: 5,
-    view_count: 512,
-    location_id: null,
-    created_at: '2026-07-07T09:40:00',
-    updated_at: '2026-07-07T09:40:00',
-    comments: [],
-  },
-  {
-    id: 11,
-    category: '음식점',
-    title: '중앙시장 튀김골목 탐방',
-    content: '[용감한 감자] 골목 전체가 튀김 냄새로 가득해요. 가성비 좋은 맛집이 많아서 여러 곳 돌아다니는 재미가 있습니다.',
-    rating: 4,
-    view_count: 398,
-    location_id: null,
-    created_at: '2026-07-06T12:15:00',
-    updated_at: '2026-07-06T12:15:00',
-    comments: [],
-  },
-  {
-    id: 12,
-    category: '레포츠',
-    title: '갑천 자전거 라이딩 코스',
-    content: '[엉뚱한 펭귄] 강변 라이딩 코스가 잘 정비되어 있어요. 다만 주말 오후엔 유동인구가 많아 속도를 줄여야 합니다.',
-    rating: 3,
-    view_count: 164,
-    location_id: null,
-    created_at: '2026-07-05T17:30:00',
-    updated_at: '2026-07-05T17:30:00',
-    comments: [],
-  },
-  {
-    id: 13,
-    category: '숙박',
-    title: '계룡산 근처 한옥 스테이 후기',
-    content: '[느긋한 고래] 한옥 특유의 분위기가 정말 좋았고, 사장님이 친절하게 주변 맛집도 알려주셨어요.',
-    rating: 5,
-    view_count: 287,
-    location_id: null,
-    created_at: '2026-07-04T21:00:00',
-    updated_at: '2026-07-04T21:00:00',
-    comments: [],
-  },
-].map((post) => ({ ...post, like_count: Math.round(post.view_count / 6), is_liked: false })))
+// 목록 API(PostListItem)는 본문·댓글이 없어, 상세를 열 때 getPost로 채운 뒤 같은 배열 항목에 캐싱한다.
+const posts = ref([])
+const isLoading = ref(true)
+const loadError = ref('')
+
+async function fetchPosts() {
+  isLoading.value = true
+  loadError.value = ''
+  try {
+    posts.value = await listAllPosts()
+  } catch (error) {
+    loadError.value = error.message || '게시글을 불러오지 못했어요.'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(fetchPosts)
 
 const queryCategories = typeof route.query.category === 'string' ? route.query.category.split(',') : []
 const selectedCategories = ref(queryCategories.filter((category) => CATEGORIES.includes(category)))
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const selectedLocationFilter = ref(null)
 const isSearchOpen = ref(Boolean(keyword.value))
 const sortOption = ref('latest')
 
@@ -220,11 +70,10 @@ function toggleCategory(category) {
 
 function toggleSearch() {
   isSearchOpen.value = !isSearchOpen.value
-  if (!isSearchOpen.value) keyword.value = ''
-}
-
-function starDisplay(rating) {
-  return '★★★★★'.slice(0, rating).padEnd(5, '☆')
+  if (!isSearchOpen.value) {
+    keyword.value = ''
+    selectedLocationFilter.value = null
+  }
 }
 
 function formatDate(value) {
@@ -239,13 +88,13 @@ const filteredPosts = computed(() => {
     const matchesCategory =
       selectedCategories.value.length === 0 || selectedCategories.value.includes(post.category)
     const matchesKeyword = !trimmedKeyword || post.title.toLowerCase().includes(trimmedKeyword)
-    return matchesCategory && matchesKeyword
+    const matchesLocation =
+      !selectedLocationFilter.value || post.location_id === selectedLocationFilter.value.content_id
+    return matchesCategory && matchesKeyword && matchesLocation
   })
 
   const sorted = [...filtered]
-  if (sortOption.value === 'rating') {
-    sorted.sort((a, b) => b.rating - a.rating)
-  } else if (sortOption.value === 'views') {
+  if (sortOption.value === 'views') {
     sorted.sort((a, b) => b.view_count - a.view_count)
   } else {
     sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -286,10 +135,34 @@ function showWriteToast(message) {
 
 const selectedPost = ref(null)
 const isPostModalOpen = ref(false)
+const isPostDetailLoading = ref(false)
 
-function openPost(post) {
-  selectedPost.value = post
+async function openPost(post) {
+  const index = posts.value.findIndex((item) => item.id === post.id)
+  const cached = index === -1 ? null : posts.value[index]
+
+  // 이미 상세(본문·댓글)를 불러온 적이 있으면 같은 객체를 재사용해 조회수 중복 증가를 피한다.
+  // GET /api/posts/{id}는 호출할 때마다 조회수를 올린다.
+  if (cached?.comments) {
+    selectedPost.value = cached
+    isPostModalOpen.value = true
+    return
+  }
+
   isPostModalOpen.value = true
+  isPostDetailLoading.value = true
+  selectedPost.value = null
+
+  try {
+    const detail = await getPost(post.id)
+    if (index !== -1) posts.value[index] = detail
+    selectedPost.value = detail
+  } catch (error) {
+    isPostModalOpen.value = false
+    showWriteToast(error.message || '게시글을 불러오지 못했어요.')
+  } finally {
+    isPostDetailLoading.value = false
+  }
 }
 
 function closePostModal() {
@@ -349,6 +222,7 @@ function handlePostCreated(newPost) {
         aria-label="게시글 검색"
         autofocus
       />
+      <LocationSearchInput v-model="selectedLocationFilter" placeholder="장소명으로 검색해 보세요" />
     </div>
 
     <div class="category-chips" aria-label="게시글 카테고리 (중복 선택 가능)">
@@ -375,12 +249,14 @@ function handlePostCreated(newPost) {
       <span>총 {{ filteredPosts.length }}건</span>
       <select v-model="sortOption" aria-label="정렬 방식">
         <option value="latest">최신순</option>
-        <option value="rating">평점순</option>
         <option value="views">조회순</option>
       </select>
     </div>
 
-    <div class="post-grid">
+    <p v-if="isLoading" class="post-empty">게시글을 불러오는 중...</p>
+    <p v-else-if="loadError" class="post-empty">{{ loadError }}</p>
+
+    <div v-else class="post-grid">
       <article
         v-for="post in pagedPosts"
         :key="post.id"
@@ -388,18 +264,17 @@ function handlePostCreated(newPost) {
         @click="openPost(post)"
       >
         <div class="post-body">
-          <span class="post-category">{{ post.category }}</span>
+          <div class="post-pill-row">
+            <span class="post-category">{{ post.category }}</span>
+            <span v-if="post.location_title" class="post-location">📍 {{ post.location_title }}</span>
+          </div>
           <h3>{{ post.title }}</h3>
-          <p class="post-rating">
-            <span class="stars">{{ starDisplay(post.rating) }}</span>
-            <span>{{ post.rating.toFixed(1) }}</span>
-          </p>
           <small>조회 {{ post.view_count.toLocaleString() }} · {{ formatDate(post.created_at) }}</small>
         </div>
       </article>
     </div>
 
-    <p v-if="filteredPosts.length === 0" class="post-empty">조건에 맞는 게시글이 없어요.</p>
+    <p v-if="!isLoading && !loadError && filteredPosts.length === 0" class="post-empty">조건에 맞는 게시글이 없어요.</p>
 
     <nav v-if="totalPages > 1" class="pagination" aria-label="게시글 페이지 이동">
       <button
@@ -441,6 +316,7 @@ function handlePostCreated(newPost) {
     <PostDetailModal
       :post="selectedPost"
       :open="isPostModalOpen"
+      :loading="isPostDetailLoading"
       @close="closePostModal"
       @deleted="handlePostDeleted"
     />
@@ -505,7 +381,10 @@ function handlePostCreated(newPost) {
 }
 
 .board-search {
+  display: flex;
   margin-bottom: 16px;
+  gap: 10px;
+  flex-direction: column;
 }
 
 .board-search input {
@@ -526,7 +405,7 @@ function handlePostCreated(newPost) {
 }
 
 .board-page .category-chips {
-  justify-content: flex-start;
+  justify-content: center;
   margin-bottom: 20px;
 }
 
@@ -579,6 +458,12 @@ function handlePostCreated(newPost) {
   padding: 16px;
 }
 
+.post-pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .post-category {
   display: inline-block;
   padding: 4px 10px;
@@ -586,6 +471,20 @@ function handlePostCreated(newPost) {
   font-size: 10px;
   font-weight: 750;
   background: #f1edff;
+  border-radius: 999px;
+}
+
+.post-location {
+  display: inline-block;
+  max-width: 100%;
+  padding: 4px 10px;
+  overflow: hidden;
+  color: #56515d;
+  font-size: 10px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #f4f2f7;
   border-radius: 999px;
 }
 
@@ -597,21 +496,6 @@ function handlePostCreated(newPost) {
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.post-rating {
-  display: flex;
-  margin: 8px 0 0;
-  gap: 6px;
-  align-items: center;
-  color: #29272e;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.post-rating .stars {
-  color: #e9a900;
-  letter-spacing: 1px;
 }
 
 .post-body small {
