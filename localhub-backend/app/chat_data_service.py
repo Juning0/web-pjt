@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -204,6 +205,8 @@ SCHEDULE_MARKERS = (
     "이번 주",
     "이번 달",
 )
+NEARBY_MARKERS = ("주변", "근처", "가까운")
+
 RECOMMEND_MARKERS = (
     "추천",
     "가볼",
@@ -489,6 +492,227 @@ class LocalHubDataService:
     def is_recommendation_query(query: str) -> bool:
         return _contains_marker(query, RECOMMEND_MARKERS)
 
+    def parse_nearby_query(self, query: str) -> dict[str, Any] | None:
+        """'A 주변/근처 B' 형태에서 기준 장소와 찾을 카테고리를 분리한다."""
+        matches = [
+            (query.find(marker), marker)
+            for marker in NEARBY_MARKERS
+            if marker in query
+        ]
+        if not matches:
+            return None
+
+        marker_index, marker = min(matches, key=lambda item: item[0])
+        before = query[:marker_index].strip()
+        after = query[marker_index + len(marker):].strip()
+
+        anchor_keyword = re.sub(
+            r"^(?:혹시|그러면|그럼|저기|여기|어디)\s*",
+            "",
+            before,
+        ).strip()
+        anchor_keyword = re.sub(
+            r"(?:에서|으로|의|이랑|하고|와|과|은|는|이|가)\s*$",
+            "",
+            anchor_keyword,
+        ).strip(" ?!.,~")
+
+        if len(anchor_keyword) < 2:
+            return None
+
+        anchor_normalized = self._normalized_place_text(anchor_keyword)
+        region_aliases = {
+            self._normalized_place_text(alias)
+            for aliases in REGION_ALIASES.values()
+            for alias in aliases
+        }
+        if anchor_normalized in region_aliases or re.search(
+            r"(?:동|읍|면|리)$",
+            anchor_keyword,
+        ):
+            # '대전 근처', '둔산동 근처'는 기존 지역·주소 검색으로 처리한다.
+            return None
+
+        target_categories = self.detect_categories(after)
+        if not target_categories:
+            anchor_categories = set(self.detect_categories(anchor_keyword))
+            target_categories = [
+                category
+                for category in self.detect_categories(query)
+                if category not in anchor_categories
+            ]
+
+        return {
+            "anchor_keyword": anchor_keyword,
+            "categories": target_categories[:3],
+            "radius_km": 5.0,
+        }
+
+    @staticmethod
+    def _normalized_place_text(value: str) -> str:
+        return re.sub(r"[^0-9a-z가-힣]", "", (value or "").lower())
+
+    def _find_anchor_location(self, anchor_keyword: str) -> dict[str, Any] | None:
+        anchor_normalized = self._normalized_place_text(anchor_keyword)
+        anchor_tokens = _tokens(anchor_keyword)
+        regions = self.detect_regions(anchor_keyword)
+        scored: list[tuple[float, dict[str, Any]]] = []
+
+        for location in self.locations:
+            if regions and not self._region_matches(location, regions):
+                continue
+
+            title_normalized = self._normalized_place_text(location["title"])
+            address_normalized = self._normalized_place_text(location["address"])
+            score = 0.0
+
+            if title_normalized == anchor_normalized:
+                score += 120
+            elif len(title_normalized) >= 2 and title_normalized in anchor_normalized:
+                score += 100 + min(len(title_normalized), 20)
+            elif len(anchor_normalized) >= 2 and anchor_normalized in title_normalized:
+                score += 85 + min(len(anchor_normalized), 20)
+
+            title_matched = score > 0
+            for token in anchor_tokens:
+                token_normalized = self._normalized_place_text(token)
+                if not token_normalized:
+                    continue
+                if token_normalized in title_normalized:
+                    score += 18
+                    title_matched = True
+                elif title_matched and token_normalized in address_normalized:
+                    score += 4
+
+            if title_matched:
+                scored.append((score, location))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda pair: (-pair[0], pair[1]["title"]))
+        return scored[0][1]
+
+    @staticmethod
+    def _distance_km(
+        latitude1: float,
+        longitude1: float,
+        latitude2: float,
+        longitude2: float,
+    ) -> float:
+        """두 위경도 사이의 직선거리를 Haversine 공식으로 계산한다."""
+        earth_radius_km = 6371.0088
+        lat1 = math.radians(latitude1)
+        lat2 = math.radians(latitude2)
+        delta_lat = lat2 - lat1
+        delta_lon = math.radians(longitude2 - longitude1)
+        haversine = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2) ** 2
+        )
+        return 2 * earth_radius_km * math.asin(min(1.0, math.sqrt(haversine)))
+
+    @staticmethod
+    def _address_neighborhood(address: str) -> str:
+        matches = re.findall(r"[0-9A-Za-z가-힣]+(?:동|읍|면|리)\b", address or "")
+        return matches[-1] if matches else ""
+
+    async def search_nearby_locations(
+        self,
+        anchor_keyword: str,
+        *,
+        categories: list[str] | None = None,
+        limit: int = 5,
+        radius_km: float = 5.0,
+        exclude_ids: set[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        """기준 장소 좌표를 중심으로 가까운 장소를 거리순으로 반환한다."""
+        anchor = self._find_anchor_location(anchor_keyword)
+        if anchor is None:
+            return [], None
+
+        excluded = set(exclude_ids or set())
+        excluded.add(anchor["id"])
+        target_categories = set(categories or [])
+        candidates = [
+            item
+            for item in self.locations
+            if item["id"] not in excluded
+            and (not target_categories or item["category"] in target_categories)
+        ]
+
+        anchor_latitude = _safe_float(anchor.get("latitude"))
+        anchor_longitude = _safe_float(anchor.get("longitude"))
+        distance_candidates: list[dict[str, Any]] = []
+
+        if anchor_latitude is not None and anchor_longitude is not None:
+            for item in candidates:
+                latitude = _safe_float(item.get("latitude"))
+                longitude = _safe_float(item.get("longitude"))
+                if latitude is None or longitude is None:
+                    continue
+                distance = self._distance_km(
+                    anchor_latitude,
+                    anchor_longitude,
+                    latitude,
+                    longitude,
+                )
+                if distance <= radius_km:
+                    distance_candidates.append(
+                        {**item, "distance_km": round(distance, 2)}
+                    )
+
+        # 좌표가 없거나 반경 내 결과가 없으면 같은 동·읍·면·리 주소로 한 번만 보완한다.
+        if not distance_candidates:
+            neighborhood = self._address_neighborhood(anchor.get("address", ""))
+            if neighborhood:
+                for item in candidates:
+                    if neighborhood not in item.get("address", ""):
+                        continue
+                    candidate = {**item}
+                    latitude = _safe_float(item.get("latitude"))
+                    longitude = _safe_float(item.get("longitude"))
+                    if (
+                        anchor_latitude is not None
+                        and anchor_longitude is not None
+                        and latitude is not None
+                        and longitude is not None
+                    ):
+                        distance = self._distance_km(
+                            anchor_latitude,
+                            anchor_longitude,
+                            latitude,
+                            longitude,
+                        )
+                        if distance > radius_km:
+                            continue
+                        candidate["distance_km"] = round(distance, 2)
+                    distance_candidates.append(candidate)
+
+        distance_candidates.sort(
+            key=lambda item: (
+                item.get("distance_km") is None,
+                float(item.get("distance_km") or 0),
+                item["title"],
+            )
+        )
+        selected = distance_candidates[:limit]
+        if not selected:
+            return [], self._public_location(anchor)
+
+        enriched = await asyncio.gather(
+            *(self._enrich_location(item) for item in selected),
+            return_exceptions=True,
+        )
+        results = [
+            item if isinstance(item, dict) else selected[index]
+            for index, item in enumerate(enriched)
+        ]
+        return (
+            [self._public_location(item) for item in results],
+            self._public_location(anchor),
+        )
+
     def find_mentioned_location_ids(self, texts: list[str]) -> set[str]:
         combined = "\n".join(texts)
         return {
@@ -706,6 +930,7 @@ class LocalHubDataService:
                 "longitude",
                 "start_date",
                 "end_date",
+                "distance_km",
             )
         }
 
