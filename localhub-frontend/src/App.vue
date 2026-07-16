@@ -1,10 +1,15 @@
 <script setup>
 import { provide, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { getLocation } from '@/api/locations'
 import ChatWidget from '@/components/ChatWidget.vue'
+import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
 
 const router = useRouter()
 const toast = ref('')
+const selectedChatPlace = ref(null)
+const isChatPlaceModalOpen = ref(false)
+const isChatPlaceDetailLoading = ref(false)
 let toastTimer
 
 function showToast(message) {
@@ -17,6 +22,60 @@ function showToast(message) {
 
 function showIntegrationEvent(source) {
   showToast(`“${source.title}” 선택 이벤트가 전달되었습니다.`)
+}
+
+function normalizeChatLocation(source) {
+  return {
+    content_id: source.id ?? source.content_id,
+    title: source.title ?? '',
+    category: source.category ?? '',
+    addr1: source.address ?? source.addr1 ?? '',
+    first_image: source.image_url ?? source.first_image ?? '',
+    avg_rating: source.rating ?? source.avg_rating ?? null,
+    review_count: source.review_count ?? 0,
+    lat: source.latitude ?? source.lat ?? null,
+    lng: source.longitude ?? source.lng ?? null,
+    start_date: source.start_date ?? '',
+    end_date: source.end_date ?? '',
+  }
+}
+
+async function openLocationDetailFromChat(source) {
+  const contentId = source.id ?? source.content_id
+  if (contentId == null || contentId === '') {
+    showToast(`“${source.title}”의 상세 정보를 찾을 수 없습니다.`)
+    return
+  }
+
+  selectedChatPlace.value = normalizeChatLocation(source)
+  isChatPlaceModalOpen.value = true
+  isChatPlaceDetailLoading.value = true
+
+  try {
+    selectedChatPlace.value = await getLocation(contentId)
+  } catch {
+    showToast('상세 정보를 모두 불러오지 못해 기본 정보만 표시합니다.')
+  } finally {
+    isChatPlaceDetailLoading.value = false
+  }
+}
+
+function closeChatPlaceDetail() {
+  isChatPlaceModalOpen.value = false
+}
+
+function openRelatedPostsFromChat(source) {
+  if (!source.title) {
+    showToast('관련 게시글을 검색할 장소명이 없습니다.')
+    return
+  }
+
+  router.push({
+    path: '/board',
+    query: {
+      keyword: source.title,
+    },
+  })
 }
 
 function openLocationFromChat(source) {
@@ -45,6 +104,8 @@ function openLocationFromChat(source) {
   if (source.image_url || source.first_image) {
     query.image = source.image_url || source.first_image
   }
+
+  isChatPlaceModalOpen.value = false
   router.push({ name: 'map', query })
 }
 
@@ -81,6 +142,16 @@ provide('showIntegrationEvent', openLocationFromChat)
     <ChatWidget
       @select-location="openLocationFromChat"
       @select-post="openPostFromChat"
+      @open-location-detail="openLocationDetailFromChat"
+      @related-posts="openRelatedPostsFromChat"
+    />
+
+    <PlaceDetailModal
+      :place="selectedChatPlace"
+      :open="isChatPlaceModalOpen"
+      :loading="isChatPlaceDetailLoading"
+      @close="closeChatPlaceDetail"
+      @select-location="openLocationFromChat"
     />
   </div>
 </template>

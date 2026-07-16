@@ -13,7 +13,12 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['select-location', 'select-post'])
+const emit = defineEmits([
+  'select-location',
+  'select-post',
+  'open-location-detail',
+  'related-posts',
+])
 
 const STORAGE_KEY = 'localhub-chat-history-v1'
 const MAX_STORED_MESSAGES = 30
@@ -170,6 +175,7 @@ async function sendMessage(text = draft.value) {
   const message = text.trim()
   if (!message || isLoading.value) return
 
+  const requestMode = mode.value
   const history = messages.value
     .filter((item) => ['user', 'assistant'].includes(item.role))
     .slice(-8)
@@ -192,7 +198,7 @@ async function sendMessage(text = draft.value) {
     const response = await requestChat({
       message,
       history,
-      mode: mode.value,
+      mode: requestMode,
       apiBaseUrl: props.apiBaseUrl,
     })
     if (modes.some((item) => item.id === response.mode)) {
@@ -208,6 +214,8 @@ async function sendMessage(text = draft.value) {
       engine: response.engine || 'local',
       notice: response.notice || '',
       errorCode: response.error_code || '',
+      retryText: response.error_code ? message : '',
+      retryMode: requestMode,
     })
   } catch (error) {
     messages.value.push({
@@ -215,8 +223,10 @@ async function sendMessage(text = draft.value) {
       role: 'assistant',
       content: error.message || '일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.',
       sources: [],
-      suggestions: ['대전 관광지 추천해줘'],
+      suggestions: [],
       isError: true,
+      retryText: message,
+      retryMode: requestMode,
     })
   } finally {
     isLoading.value = false
@@ -234,6 +244,36 @@ function selectSource(source) {
       detail: source,
     }),
   )
+}
+
+function openLocationDetail(source) {
+  if (source.type !== 'location') return
+  emit('open-location-detail', source)
+}
+
+function openRelatedPosts(source) {
+  if (source.type !== 'location') return
+  emit('related-posts', source)
+}
+
+async function retryMessage(message, index) {
+  if (!message.retryText || isLoading.value) return
+
+  const previousMessage = messages.value[index - 1]
+  if (
+    previousMessage?.role === 'user' &&
+    previousMessage.content === message.retryText
+  ) {
+    messages.value.splice(index - 1, 2)
+  } else {
+    messages.value.splice(index, 1)
+  }
+
+  if (modes.some((item) => item.id === message.retryMode)) {
+    mode.value = message.retryMode
+  }
+
+  await sendMessage(message.retryText)
 }
 
 function handleImageError(event) {
@@ -352,6 +392,15 @@ function eventDateLabel(source) {
               <p :class="['message-bubble', { error: message.isError }]">
                 {{ message.content }}
               </p>
+              <button
+                v-if="(message.isError || message.errorCode) && message.retryText"
+                class="retry-button"
+                type="button"
+                :disabled="isLoading"
+                @click="retryMessage(message, index)"
+              >
+                다시 시도
+              </button>
               <span
                 v-if="message.engine"
                 :class="['engine-badge', { openai: message.engine === 'openai' }]"
@@ -371,7 +420,10 @@ function eventDateLabel(source) {
                 <article
                   v-for="source in message.sources"
                   :key="`${source.type}-${source.id}`"
-                  class="source-card"
+                  :class="['source-card', { clickable: source.type === 'location' }]"
+                  :tabindex="source.type === 'location' ? 0 : undefined"
+                  @click="source.type === 'location' && openLocationDetail(source)"
+                  @keydown.enter.self="source.type === 'location' && openLocationDetail(source)"
                 >
                   <div v-if="source.type === 'location'" class="source-image">
                     <div class="image-placeholder" aria-hidden="true">
@@ -403,8 +455,38 @@ function eventDateLabel(source) {
                     </p>
                     <p v-if="source.address" class="source-address">{{ source.address }}</p>
                     <p v-if="source.excerpt" class="source-excerpt">{{ source.excerpt }}</p>
-                    <button class="source-action" type="button" @click="selectSource(source)">
-                      {{ source.type === 'location' ? '지도에서 보기' : '게시글 열기' }}
+
+                    <div v-if="source.type === 'location'" class="source-actions">
+                      <button
+                        class="source-action"
+                        type="button"
+                        @click.stop="openLocationDetail(source)"
+                      >
+                        상세보기
+                      </button>
+                      <button
+                        class="source-action"
+                        type="button"
+                        @click.stop="selectSource(source)"
+                      >
+                        지도에서 보기
+                      </button>
+                      <button
+                        class="source-action"
+                        type="button"
+                        @click.stop="openRelatedPosts(source)"
+                      >
+                        관련 게시글
+                      </button>
+                    </div>
+
+                    <button
+                      v-else
+                      class="source-action"
+                      type="button"
+                      @click="selectSource(source)"
+                    >
+                      게시글 열기
                       <svg viewBox="0 0 20 20" aria-hidden="true">
                         <path d="m7 4 6 6-6 6" />
                       </svg>
@@ -783,6 +865,29 @@ function eventDateLabel(source) {
   border-color: #efc6c6;
 }
 
+.retry-button {
+  margin-top: 6px;
+  padding: 6px 10px;
+  color: #8c3434;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: #fff;
+  border: 1px solid #e3b8b8;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.retry-button:hover {
+  background: #fff1f1;
+  border-color: #cf8f8f;
+}
+
+.retry-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .engine-badge {
   display: inline-block;
   margin-top: 5px;
@@ -837,6 +942,15 @@ function eventDateLabel(source) {
 .source-card:hover {
   border-color: #aaa5b2;
   box-shadow: 0 5px 16px rgb(43 39 52 / 7%);
+}
+
+.source-card.clickable {
+  cursor: pointer;
+}
+
+.source-card.clickable:focus-visible {
+  outline: 3px solid rgb(126 102 226 / 24%);
+  outline-offset: 2px;
 }
 
 .source-image {
@@ -939,23 +1053,38 @@ function eventDateLabel(source) {
   -webkit-line-clamp: 2;
 }
 
+.source-actions {
+  display: flex;
+  margin-top: 8px;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
 .source-action {
   display: inline-flex;
+  min-height: 26px;
   margin: 7px 0 0;
-  padding: 0;
+  padding: 4px 7px;
   gap: 2px;
   color: #3c3842;
   font: inherit;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  background: transparent;
-  border: 0;
+  background: #fff;
+  border: 1px solid #d7d2e2;
+  border-radius: 6px;
   cursor: pointer;
   align-items: center;
 }
 
+.source-actions .source-action {
+  margin-top: 0;
+}
+
 .source-action:hover {
   color: var(--purple);
+  background: var(--purple-soft);
+  border-color: #bdb2ea;
 }
 
 .source-action svg {
