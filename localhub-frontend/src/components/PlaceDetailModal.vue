@@ -3,7 +3,8 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { randomNickname } from '@/utils/nickname'
 import { eventDateLabel } from '@/utils/date'
 import { getLocation } from '@/api/locations'
-import { createPost } from '@/api/posts'
+import { createPost, getPost, listPosts } from '@/api/posts'
+import PostContent from '@/components/PostContent.vue'
 
 const props = defineProps({
   place: {
@@ -36,6 +37,14 @@ const submitError = ref('')
 const submitSuccess = ref(false)
 const reviewNickname = ref(randomNickname())
 
+// 이 장소에 달린 리뷰(=location_id로 연결된 게시글) 최신순 미리보기 목록.
+const reviews = ref([])
+const isReviewsLoading = ref(false)
+
+// null이면 장소 상세 화면, 값이 있으면 그 리뷰로 "드릴다운"한 화면 — 같은 모달 안에서 화면만 전환한다.
+const selectedReview = ref(null)
+const isReviewDetailLoading = ref(false)
+
 const hasCoords = computed(() => Boolean(location.value?.lat && location.value?.lng))
 const eventPeriod = computed(() => eventDateLabel(location.value))
 
@@ -62,12 +71,58 @@ function resetReviewForm() {
   reviewNickname.value = randomNickname()
 }
 
+function reviewStars(rating) {
+  return '★★★★★'.slice(0, rating || 0).padEnd(5, '☆')
+}
+
+function formatReviewDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
+}
+
+async function fetchReviews(contentId) {
+  isReviewsLoading.value = true
+  try {
+    const response = await listPosts({ locationId: contentId, sort: 'latest', size: 5 })
+    reviews.value = response.items
+  } catch {
+    reviews.value = []
+  } finally {
+    isReviewsLoading.value = false
+  }
+}
+
+async function openReview(item) {
+  isReviewDetailLoading.value = true
+  selectedReview.value = { id: item.id } // truthy placeholder: 헤더가 즉시 "뒤로가기" 화면으로 전환되게
+  try {
+    selectedReview.value = await getPost(item.id)
+  } catch {
+    selectedReview.value = null
+  } finally {
+    isReviewDetailLoading.value = false
+  }
+}
+
+function backToPlace() {
+  selectedReview.value = null
+}
+
+async function handleReviewDeleted(postId) {
+  reviews.value = reviews.value.filter((review) => review.id !== postId)
+  backToPlace()
+  if (location.value) location.value = await getLocation(location.value.content_id)
+}
+
 watch(
   () => [props.open, props.place],
   ([isOpen, place]) => {
     if (isOpen && place) {
       resetReviewForm()
+      backToPlace()
       location.value = { ...place }
+      fetchReviews(place.content_id)
     }
   },
   { immediate: true },
@@ -129,6 +184,7 @@ async function submitReview() {
 
     // avg_rating/review_count는 서버가 계산하므로 등록 후 상세를 다시 조회한다.
     location.value = await getLocation(location.value.content_id)
+    fetchReviews(location.value.content_id)
 
     submitSuccess.value = true
     isReviewFormOpen.value = false
@@ -156,15 +212,35 @@ async function submitReview() {
           :aria-label="location?.title || '장소 상세'"
         >
           <header class="modal-header">
-            <button class="icon-button" type="button" aria-label="닫기" @click="handleClose">
+            <button
+              v-if="selectedReview"
+              class="icon-button"
+              type="button"
+              aria-label="장소로 돌아가기"
+              @click="backToPlace"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="m15 5-7 7 7 7" />
+              </svg>
+            </button>
+            <span v-else class="icon-button-spacer" aria-hidden="true"></span>
+            <button class="icon-button" type="button" aria-label="닫기" @click="handleClose">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 6 12 12M18 6 6 18" />
               </svg>
             </button>
           </header>
 
           <div class="modal-body">
-            <p v-if="loading" class="loading-text">불러오는 중...</p>
+            <template v-if="selectedReview">
+              <PostContent
+                :post="selectedReview"
+                :loading="isReviewDetailLoading"
+                @deleted="handleReviewDeleted"
+                @select-location="(payload) => emit('select-location', payload)"
+              />
+            </template>
+            <p v-else-if="loading" class="loading-text">불러오는 중...</p>
             <template v-else-if="location">
               <span class="category-pill">{{ location.category }}</span>
               <h2 class="place-title">{{ location.title }}</h2>
@@ -187,6 +263,7 @@ async function submitReview() {
                       d="M4 18V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12H4Zm0-3 4-4 3 3 2-2 5 5M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"
                     />
                   </svg>
+                  <p>이미지가 제공되지 않는 장소입니다.</p>
                 </div>
               </div>
 
@@ -213,6 +290,26 @@ async function submitReview() {
               >
                 지도에서 보기
               </button>
+
+              <div class="reviews-list-section">
+                <h3 class="reviews-heading">리뷰 {{ location.review_count || 0 }}건</h3>
+                <p v-if="isReviewsLoading" class="reviews-empty">리뷰를 불러오는 중...</p>
+                <ul v-else-if="reviews.length" class="reviews-list">
+                  <li
+                    v-for="review in reviews"
+                    :key="review.id"
+                    class="review-item"
+                    @click="openReview(review)"
+                  >
+                    <div class="review-item-top">
+                      <span class="review-stars">{{ reviewStars(review.rating) }}</span>
+                      <span class="review-date">{{ formatReviewDate(review.created_at) }}</span>
+                    </div>
+                    <p class="review-item-title">{{ review.title }}</p>
+                  </li>
+                </ul>
+                <p v-else class="reviews-empty">아직 등록된 리뷰가 없어요.</p>
+              </div>
 
               <div class="review-section">
                 <button
@@ -318,8 +415,8 @@ async function submitReview() {
   --purple-soft: #f1edff;
   --star: #e9a900;
   display: flex;
-  width: min(420px, 100%);
-  max-height: min(720px, calc(100dvh - 48px));
+  width: min(480px, 100%);
+  max-height: min(760px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--ink);
   font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -334,6 +431,7 @@ async function submitReview() {
   min-height: 52px;
   padding: 8px 10px;
   align-items: center;
+  justify-content: space-between;
   border-bottom: 1px solid var(--line);
 }
 
@@ -348,6 +446,11 @@ async function submitReview() {
   border-radius: 8px;
   cursor: pointer;
   place-items: center;
+}
+
+.icon-button-spacer {
+  width: 34px;
+  height: 34px;
 }
 
 .icon-button:hover {
@@ -429,11 +532,14 @@ async function submitReview() {
 }
 
 .photo-placeholder {
-  display: grid;
+  display: flex;
   width: 100%;
   height: 100%;
+  gap: 8px;
   color: #aaa6b0;
-  place-items: center;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .photo-placeholder svg {
@@ -444,6 +550,13 @@ async function submitReview() {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.5;
+}
+
+.photo-placeholder p {
+  margin: 0;
+  color: #98949e;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .info-list {
@@ -485,6 +598,74 @@ async function submitReview() {
 
 .map-button:hover {
   border-color: #9a95a2;
+}
+
+.reviews-list-section {
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.reviews-heading {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.reviews-empty {
+  margin: 0;
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reviews-list {
+  display: flex;
+  padding: 0;
+  margin: 0;
+  gap: 4px;
+  list-style: none;
+  flex-direction: column;
+}
+
+.review-item {
+  padding: 10px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background-color 160ms ease;
+}
+
+.review-item:hover {
+  background: var(--soft);
+}
+
+.review-item-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.review-stars {
+  color: var(--star);
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+.review-date {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.review-item-title {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .review-section {

@@ -1,9 +1,17 @@
 import { apiFetch } from './client'
 
-export function listPosts({ category, keyword, sort = 'latest', page = 1, size = 10 } = {}) {
+export function listPosts({
+  category,
+  keyword,
+  sort = 'latest',
+  page = 1,
+  size = 10,
+  locationId,
+} = {}) {
   const params = new URLSearchParams()
   if (category) params.set('category', category)
   if (keyword) params.set('keyword', keyword)
+  if (locationId) params.set('location_id', locationId)
   params.set('sort', sort)
   params.set('page', String(page))
   params.set('size', String(size))

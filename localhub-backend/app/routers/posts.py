@@ -14,10 +14,11 @@ def list_posts(
     sort: str = Query("latest", pattern="^(latest|rating|views)$"),
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=1, le=50),
+    location_id: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """게시글 목록 (카테고리 필터 / 검색 / 정렬 / 페이지네이션)."""
-    total, items = crud.get_posts(db, category, keyword, sort, page, size)
+    """게시글 목록 (카테고리 필터 / 검색 / 정렬 / 페이지네이션 / 장소별 리뷰 필터)."""
+    total, items = crud.get_posts(db, category, keyword, sort, page, size, location_id)
     return {"total": total, "page": page, "size": size, "items": items}
 
 

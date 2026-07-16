@@ -11,6 +11,7 @@ router = APIRouter(prefix="/api/locations", tags=["locations"])
 def list_locations(
     category: str | None = None,
     keyword: str | None = None,
+    sort: str = Query("default", pattern="^(default|rating|recent)$"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -18,9 +19,10 @@ def list_locations(
     """
     공공데이터(POI) 목록 — 읽기 전용.
     category 예: 관광지 / 음식점 / 축제공연행사 / 문화시설 / 쇼핑 / 숙박 / 레포츠 / 여행코스
+    sort: default(기본 순서) / rating(평점 높은순) / recent(최근 리뷰 등록순)
     """
     total, items = crud.get_locations(
-        db, category, keyword, skip=(page - 1) * size, limit=size
+        db, category, keyword, skip=(page - 1) * size, limit=size, sort=sort
     )
     return {
         "total": total,

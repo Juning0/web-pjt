@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PostDetailModal from '@/components/PostDetailModal.vue'
 import PostWriteModal from '@/components/PostWriteModal.vue'
 import { CATEGORIES } from '@/constants/categories'
 import { getPost, listAllPosts } from '@/api/posts'
 
+const showIntegrationEvent = inject('showIntegrationEvent')
 const route = useRoute()
 const PAGE_SIZE = 6
 
@@ -304,6 +305,7 @@ function handlePostCreated(newPost) {
       :loading="isPostDetailLoading"
       @close="closePostModal"
       @deleted="handlePostDeleted"
+      @select-location="showIntegrationEvent"
     />
 
     <PostWriteModal
@@ -317,9 +319,7 @@ function handlePostCreated(newPost) {
 <style scoped>
 .board-page {
   position: relative;
-  width: min(1120px, calc(100% - 40px));
   padding: 24px 0 90px;
-  margin: 0 auto;
 }
 
 .board-topbar {
@@ -577,10 +577,6 @@ function handlePostCreated(newPost) {
 }
 
 @media (max-width: 760px) {
-  .board-page {
-    width: min(100% - 28px, 1120px);
-  }
-
   .post-grid {
     gap: 10px;
   }

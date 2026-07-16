@@ -497,7 +497,7 @@ function eventDateLabel(source) {
 
 .chat-launcher {
   position: fixed;
-  right: 28px;
+  right: max(28px, calc((100vw - 1120px) / 2 + 28px));
   bottom: 28px;
   z-index: 1000;
   display: grid;
@@ -556,7 +556,7 @@ function eventDateLabel(source) {
   --purple-soft: #f1edff;
   --star: #e9a900;
   position: fixed;
-  right: 28px;
+  right: max(28px, calc((100vw - 1120px) / 2 + 28px));
   bottom: 96px;
   z-index: 1000;
   display: flex;
