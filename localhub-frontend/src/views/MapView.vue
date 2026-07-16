@@ -1,12 +1,13 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
 import { CATEGORIES, toLocationCategory } from '@/constants/categories'
 import { getLocation, listAllLocations } from '@/api/locations'
 import { loadKakaoMaps } from '@/utils/kakaoMap'
 
 const route = useRoute()
+const router = useRouter()
 
 const places = ref([])
 const isPlacesLoading = ref(false)
@@ -40,36 +41,6 @@ const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" 
 </svg>`
 const PIN_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PIN_SVG)}`
 
-// GPS 버튼으로 찾은 현재 위치는 장소 핀과 구분되는 파란 점으로 표시한다.
-const MY_LOCATION_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
-  <circle cx="13" cy="13" r="11" fill="#4285f4" fill-opacity="0.18"/>
-  <circle cx="13" cy="13" r="6.5" fill="#4285f4" stroke="#fff" stroke-width="2.5"/>
-</svg>`
-const MY_LOCATION_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(MY_LOCATION_SVG)}`
-
-// 잘못된 좌표 한 건이 전체 지도 범위를 한국 밖까지 넓히지 않도록 방어한다.
-// LocalHub 데이터 범위(대전·충청)를 넉넉하게 포함하는 대한민국 영역이다.
-const KOREA_COORDINATE_BOUNDS = Object.freeze({
-  minLat: 33,
-  maxLat: 39,
-  minLng: 124,
-  maxLng: 132,
-})
-
-function getValidCoordinates(place) {
-  const lat = Number(place?.lat ?? place?.latitude)
-  const lng = Number(place?.lng ?? place?.longitude)
-  const isValid =
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= KOREA_COORDINATE_BOUNDS.minLat &&
-    lat <= KOREA_COORDINATE_BOUNDS.maxLat &&
-    lng >= KOREA_COORDINATE_BOUNDS.minLng &&
-    lng <= KOREA_COORDINATE_BOUNDS.maxLng
-
-  return isValid ? { lat, lng } : null
-}
-
 const mapContainer = ref(null)
 const loadError = ref('')
 const isMapReady = ref(false)
@@ -78,6 +49,8 @@ const selectedCategories = ref([])
 const searchKeyword = ref('')
 const selectedPlace = ref(null)
 const isPlaceModalOpen = ref(false)
+const isRouteFocusActive = ref(false)
+const focusedRoutePlace = ref(null)
 const isPlaceDetailLoading = ref(false)
 const locateError = ref('')
 let locateErrorTimer
@@ -88,8 +61,8 @@ const visiblePlaces = computed(() => {
   return places.value.filter((place) => {
     const matchesKeyword =
       !trimmedKeyword ||
-      place.title.toLowerCase().includes(trimmedKeyword) ||
-      place.addr1.toLowerCase().includes(trimmedKeyword)
+      String(place.title || '').toLowerCase().includes(trimmedKeyword) ||
+      String(place.addr1 || '').toLowerCase().includes(trimmedKeyword)
     return matchesKeyword
   })
 })
@@ -104,7 +77,6 @@ let kakaoRef = null
 let clusterer = null
 let markers = []
 let highlightedMarker = null
-let myLocationMarker = null
 
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
@@ -141,12 +113,10 @@ function closePlaceModal() {
 }
 
 function handleSelectLocation(source) {
-  const coordinates = getValidCoordinates(source)
-  if (!mapInstance || !kakaoRef || !coordinates) {
-    showLocateError('이 장소의 지도 좌표가 올바르지 않아요.')
-    return
-  }
-  mapInstance.panTo(new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng))
+  const latitude = source.latitude ?? source.lat
+  const longitude = source.longitude ?? source.lng
+  if (!mapInstance || !kakaoRef || latitude == null || longitude == null) return
+  mapInstance.panTo(new kakaoRef.maps.LatLng(latitude, longitude))
 }
 
 function firstQueryValue(value) {
@@ -174,21 +144,30 @@ function routeLocation() {
   }
 }
 
-function focusRouteLocation() {
+async function focusRouteLocation() {
   if (!mapInstance || !kakaoRef) return
+
   highlightedMarker?.setMap(null)
   highlightedMarker = null
 
   const place = routeLocation()
-  if (!place) return
-
-  const coordinates = getValidCoordinates(place)
-  if (!coordinates) {
-    showLocateError('선택한 장소의 지도 좌표가 올바르지 않아요.')
+  if (!place) {
+    isRouteFocusActive.value = false
+    focusedRoutePlace.value = null
+    await nextTick()
+    mapInstance.relayout()
+    renderMarkers()
     return
   }
 
-  const position = new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng)
+  isRouteFocusActive.value = true
+  focusedRoutePlace.value = place
+  closePlaceModal()
+  clearMarkers()
+  await nextTick()
+  mapInstance.relayout()
+
+  const position = new kakaoRef.maps.LatLng(place.lat, place.lng)
   const markerImage = new kakaoRef.maps.MarkerImage(
     PIN_IMAGE_SRC,
     new kakaoRef.maps.Size(32, 40),
@@ -203,7 +182,14 @@ function focusRouteLocation() {
   kakaoRef.maps.event.addListener(highlightedMarker, 'click', () => openPlace(place))
   mapInstance.setLevel(4)
   mapInstance.panTo(position)
-  openPlace(place)
+}
+
+async function showAllMarkers() {
+  closePlaceModal()
+  searchKeyword.value = ''
+  selectedCategories.value = []
+  await router.replace({ name: 'map' })
+  await fetchPlaces()
 }
 
 function clearMarkers() {
@@ -212,14 +198,10 @@ function clearMarkers() {
 }
 
 function renderMarkers() {
-  if (!mapInstance || !kakaoRef || !clusterer) return
+  if (!mapInstance || !kakaoRef || !clusterer || isRouteFocusActive.value) return
   clearMarkers()
 
-  const mappablePlaces = visiblePlaces.value
-    .map((place) => ({ place, coordinates: getValidCoordinates(place) }))
-    .filter((item) => item.coordinates)
-
-  if (!mappablePlaces.length) return
+  if (!visiblePlaces.value.length) return
 
   const bounds = new kakaoRef.maps.LatLngBounds()
   const markerImage = new kakaoRef.maps.MarkerImage(
@@ -228,8 +210,8 @@ function renderMarkers() {
     { offset: new kakaoRef.maps.Point(16, 40) },
   )
 
-  mappablePlaces.forEach(({ place, coordinates }) => {
-    const position = new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng)
+  visiblePlaces.value.forEach((place) => {
+    const position = new kakaoRef.maps.LatLng(place.lat, place.lng)
     const marker = new kakaoRef.maps.Marker({ position, image: markerImage, title: place.title })
     kakaoRef.maps.event.addListener(marker, 'click', () => openPlace(place))
     markers.push(marker)
@@ -238,20 +220,12 @@ function renderMarkers() {
 
   clusterer.addMarkers(markers)
   // 가까이 붙어있는 마커는 클러스터로 묶이므로, 항상 보이는 마커 전체에 맞춰 지도 범위를 다시 잡는다.
-  if (markers.length === 1) {
-    mapInstance.setLevel(5)
-    mapInstance.panTo(markers[0].getPosition())
-  } else {
-    mapInstance.setBounds(bounds)
-  }
+  mapInstance.setBounds(bounds)
 }
 
 function focusPlace(place) {
-  const coordinates = getValidCoordinates(place)
-  if (mapInstance && kakaoRef && coordinates) {
-    mapInstance.panTo(new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng))
-  } else if (!coordinates) {
-    showLocateError('이 장소의 지도 좌표가 올바르지 않아요.')
+  if (mapInstance && kakaoRef) {
+    mapInstance.panTo(new kakaoRef.maps.LatLng(place.lat, place.lng))
   }
   openPlace(place)
 }
@@ -272,28 +246,14 @@ function locateMe() {
   navigator.geolocation.getCurrentPosition(
     (position) => {
       if (!mapInstance || !kakaoRef) return
-      const here = new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude)
       mapInstance.setLevel(5)
-      mapInstance.panTo(here)
-
-      myLocationMarker?.setMap(null)
-      const markerImage = new kakaoRef.maps.MarkerImage(
-        MY_LOCATION_IMAGE_SRC,
-        new kakaoRef.maps.Size(26, 26),
-        { offset: new kakaoRef.maps.Point(13, 13) },
+      mapInstance.panTo(
+        new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude),
       )
-      myLocationMarker = new kakaoRef.maps.Marker({
-        map: mapInstance,
-        position: here,
-        image: markerImage,
-        title: '현재 위치',
-        zIndex: 10,
-      })
     },
     () => {
       showLocateError('위치 정보를 가져오지 못했어요. 권한을 확인해 주세요.')
     },
-    { enableHighAccuracy: true, timeout: 10000 },
   )
 }
 
@@ -325,19 +285,16 @@ onMounted(async () => {
     })
     isMapReady.value = true
     await fetchPlaces()
-    focusRouteLocation()
+    await focusRouteLocation()
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
   }
-  fetchPlaces()
 })
 
 onUnmounted(() => {
   clearMarkers()
   highlightedMarker?.setMap(null)
   highlightedMarker = null
-  myLocationMarker?.setMap(null)
-  myLocationMarker = null
   clusterer = null
   mapInstance = null
   kakaoRef = null
@@ -363,7 +320,7 @@ watch(
     </header>
 
     <div class="map-body">
-      <aside class="map-list-panel">
+      <aside v-if="!isRouteFocusActive" class="map-list-panel">
         <div class="map-list-controls">
           <form class="map-search sidebar-search" @submit.prevent="renderMarkers">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -425,7 +382,7 @@ watch(
       </aside>
 
       <div class="map-stage">
-        <form class="map-search floating" @submit.prevent="renderMarkers">
+        <form v-if="!isRouteFocusActive" class="map-search floating" @submit.prevent="renderMarkers">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="6.5" />
             <path d="m16 16 4 4" />
@@ -450,7 +407,7 @@ watch(
           </button>
         </form>
 
-        <div class="category-chips floating" aria-label="장소 카테고리 (중복 선택 가능)">
+        <div v-if="!isRouteFocusActive" class="category-chips floating" aria-label="장소 카테고리 (중복 선택 가능)">
           <button
             type="button"
             :class="{ active: isCategoryActive('전체') }"
@@ -471,6 +428,19 @@ watch(
         </div>
 
         <div ref="mapContainer" class="map-container"></div>
+
+        <div v-if="isRouteFocusActive" class="route-focus-panel" role="status">
+          <div class="route-focus-copy">
+            <span>선택한 장소</span>
+            <strong>{{ focusedRoutePlace?.title }}</strong>
+          </div>
+          <button type="button" @click="showAllMarkers">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 5-7 7 7 7" />
+            </svg>
+            전체 마커로 돌아가기
+          </button>
+        </div>
 
         <button class="locate-button" type="button" aria-label="내 위치로 이동" @click="locateMe">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -639,11 +609,82 @@ watch(
   background: #f4f2f7;
 }
 
+.route-focus-panel {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  width: min(520px, calc(100% - 28px));
+  min-height: 58px;
+  padding: 9px 10px 9px 14px;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid #dedbe4;
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgb(35 32 42 / 14%);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+}
+
+.route-focus-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.route-focus-copy span {
+  color: #827d88;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.route-focus-copy strong {
+  margin-top: 2px;
+  overflow: hidden;
+  color: #29272e;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-focus-panel button {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 7px 11px;
+  gap: 5px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+  background: #29272e;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  align-items: center;
+}
+
+.route-focus-panel button:hover {
+  background: #7e66e2;
+}
+
+.route-focus-panel button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
 .locate-button {
   position: absolute;
   right: 14px;
-  /* 우하단 챗봇 런처(58px, bottom 28px)와 겹치지 않도록 그 위쪽에 띄운다. */
-  bottom: 100px;
+  bottom: 14px;
   z-index: 10;
   display: grid;
   width: 42px;
@@ -866,6 +907,18 @@ watch(
   .map-search.floating,
   .category-chips.floating {
     display: flex;
+  }
+
+  .route-focus-panel {
+    top: 10px;
+    width: calc(100% - 20px);
+    padding-left: 12px;
+    gap: 8px;
+  }
+
+  .route-focus-panel button {
+    padding: 7px 9px;
+    font-size: 10px;
   }
 }
 </style>
