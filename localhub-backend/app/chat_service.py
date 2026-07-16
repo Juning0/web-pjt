@@ -71,6 +71,7 @@ SYSTEM_INSTRUCTIONS = """
 10. 웹 검색, 도구 실행, 예약, 게시글 작성 등은 수행하지 않고 질의응답만 한다.
 11. 사용자가 여러 카테고리를 '하나씩' 요청하면 검색 결과에서 카테고리별로 정확히 1곳씩 답한다.
 12. category_result_counts가 1 이상인 카테고리를 결과가 없다고 잘못 안내하지 않는다.
+13. nearby_search가 있으면 기준 장소와 검색 반경을 확인하고, distance_km는 좌표로 계산한 직선거리로 안내한다.
 """.strip()
 
 INTENT_INSTRUCTIONS = """
@@ -120,8 +121,15 @@ class ChatService:
                 engine="local",
             )
 
+        nearby_request = self.data_service.parse_nearby_query(query)
         intent, intent_error = await self._resolve_intent(request)
         mode: ResolvedChatMode = intent.mode
+        if mode != "recommend":
+            nearby_request = None
+        elif nearby_request:
+            if nearby_request["categories"]:
+                intent.categories = nearby_request["categories"]
+            intent.keywords = []
         faq_answer = self.data_service.find_faq(query) if mode == "faq" else None
         if mode == "faq" and not faq_answer:
             faq_answer = (
@@ -138,15 +146,25 @@ class ChatService:
             exclude_ids = self.data_service.find_mentioned_location_ids(history_texts)
         locations: list[dict[str, Any]] = []
         posts: list[dict[str, Any]] = []
+        nearby_anchor: dict[str, Any] | None = None
 
         if mode == "recommend":
             location_limit = self._location_limit(query, intent)
-            locations = await self.data_service.search_locations(
-                search_query,
-                limit=location_limit,
-                allow_defaults=self.data_service.is_recommendation_query(query),
-                exclude_ids=exclude_ids,
-            )
+            if nearby_request:
+                locations, nearby_anchor = await self.data_service.search_nearby_locations(
+                    nearby_request["anchor_keyword"],
+                    categories=intent.categories,
+                    limit=location_limit,
+                    radius_km=float(nearby_request["radius_km"]),
+                    exclude_ids=exclude_ids,
+                )
+            else:
+                locations = await self.data_service.search_locations(
+                    search_query,
+                    limit=location_limit,
+                    allow_defaults=self.data_service.is_recommendation_query(query),
+                    exclude_ids=exclude_ids,
+                )
         elif mode == "posts":
             locations = await self.data_service.search_locations(
                 search_query,
@@ -157,7 +175,16 @@ class ChatService:
 
         sources = [ChatSource(**item) for item in [*locations, *posts]]
         suggestions = self._suggestions(mode, locations, posts)
-        context = self._build_context(query, search_query, intent, locations, posts, faq_answer)
+        context = self._build_context(
+            query,
+            search_query,
+            intent,
+            locations,
+            posts,
+            faq_answer,
+            nearby_request=nearby_request,
+            nearby_anchor=nearby_anchor,
+        )
 
         if self.openai_client and mode != "faq" and not intent_error:
             try:
@@ -175,7 +202,15 @@ class ChatService:
                 intent_error = self._openai_error(exc)
                 logger.warning("OpenAI answer failed: %s", type(exc).__name__)
 
-        answer = self._fallback_answer(query, intent, locations, posts, faq_answer)
+        answer = self._fallback_answer(
+            query,
+            intent,
+            locations,
+            posts,
+            faq_answer,
+            nearby_request=nearby_request,
+            nearby_anchor=nearby_anchor,
+        )
         error_code = ""
         notice = ""
         if mode != "faq":
@@ -337,6 +372,9 @@ class ChatService:
         locations: list[dict[str, Any]],
         posts: list[dict[str, Any]],
         faq_answer: str | None,
+        *,
+        nearby_request: dict[str, Any] | None = None,
+        nearby_anchor: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return {
             "current_query": query,
@@ -349,6 +387,17 @@ class ChatService:
             },
             "community_posts": posts,
             "faq_answer": faq_answer,
+            "nearby_search": (
+                {
+                    "requested": True,
+                    "anchor_keyword": nearby_request["anchor_keyword"],
+                    "anchor": nearby_anchor,
+                    "radius_km": nearby_request["radius_km"],
+                    "distance_type": "좌표 기준 직선거리",
+                }
+                if nearby_request
+                else None
+            ),
             "limitations": {
                 "festival_start_end_dates_available": any(
                     item.get("start_date") or item.get("end_date") for item in locations
@@ -366,9 +415,19 @@ class ChatService:
         locations: list[dict[str, Any]],
         posts: list[dict[str, Any]],
         faq_answer: str | None,
+        *,
+        nearby_request: dict[str, Any] | None = None,
+        nearby_anchor: dict[str, Any] | None = None,
     ) -> str:
         if faq_answer:
             return faq_answer
+        if nearby_request:
+            return self._fallback_nearby_answer(
+                intent,
+                locations,
+                nearby_request,
+                nearby_anchor,
+            )
 
         parts: list[str] = []
         if locations:
@@ -430,6 +489,50 @@ class ChatService:
                 "예: '대전에서 잘 곳 알려줘'"
             )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _fallback_nearby_answer(
+        intent: QueryIntent,
+        locations: list[dict[str, Any]],
+        nearby_request: dict[str, Any],
+        nearby_anchor: dict[str, Any] | None,
+    ) -> str:
+        anchor_keyword = str(nearby_request["anchor_keyword"])
+        if nearby_anchor is None:
+            return (
+                f"현재 제공된 대전여지도 데이터에서 기준 장소 '{anchor_keyword}'를 찾지 못했어요. "
+                "장소명을 조금 더 정확하게 입력해 주세요."
+            )
+
+        category_text = "·".join(intent.categories) if intent.categories else "장소"
+        radius_km = float(nearby_request["radius_km"])
+        if not locations:
+            return (
+                f"{nearby_anchor['title']}을(를) 기준으로 반경 {radius_km:g}km 안에서 "
+                f"{category_text} 정보를 찾지 못했어요."
+            )
+
+        lines = [
+            f"{nearby_anchor['title']} 주변의 {category_text} 정보를 가까운 순으로 알려드릴게요."
+        ]
+        for index, item in enumerate(locations, start=1):
+            distance = item.get("distance_km")
+            distance_text = (
+                f"약 {float(distance):.1f}km"
+                if distance is not None
+                else "같은 동네 주소"
+            )
+            address = item.get("address") or "주소 정보 없음"
+            rating = (
+                f"평점 {item['rating']:.1f} · 리뷰 {item['review_count']}개"
+                if item.get("rating") is not None
+                else "평점 정보 없음"
+            )
+            lines.append(
+                f"{index}. {item['title']} ({distance_text})\n"
+                f"   {address} · {rating}"
+            )
+        return "\n".join(lines)
 
     @staticmethod
     def _event_date_text(item: dict[str, Any]) -> str:
