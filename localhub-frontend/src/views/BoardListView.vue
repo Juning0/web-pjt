@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import LocationSearchInput from '@/components/LocationSearchInput.vue'
 import PostDetailModal from '@/components/PostDetailModal.vue'
 import PostWriteModal from '@/components/PostWriteModal.vue'
 import { CATEGORIES } from '@/constants/categories'
@@ -18,8 +19,7 @@ async function fetchPosts() {
   isLoading.value = true
   loadError.value = ''
   try {
-    const items = await listAllPosts()
-    posts.value = items.map((post) => ({ like_count: 0, is_liked: false, ...post }))
+    posts.value = await listAllPosts()
   } catch (error) {
     loadError.value = error.message || '게시글을 불러오지 못했어요.'
   } finally {
@@ -32,6 +32,7 @@ onMounted(fetchPosts)
 const queryCategories = typeof route.query.category === 'string' ? route.query.category.split(',') : []
 const selectedCategories = ref(queryCategories.filter((category) => CATEGORIES.includes(category)))
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const selectedLocationFilter = ref(null)
 const isSearchOpen = ref(Boolean(keyword.value))
 const sortOption = ref('latest')
 
@@ -52,11 +53,10 @@ function toggleCategory(category) {
 
 function toggleSearch() {
   isSearchOpen.value = !isSearchOpen.value
-  if (!isSearchOpen.value) keyword.value = ''
-}
-
-function starDisplay(rating) {
-  return '★★★★★'.slice(0, rating || 0).padEnd(5, '☆')
+  if (!isSearchOpen.value) {
+    keyword.value = ''
+    selectedLocationFilter.value = null
+  }
 }
 
 function formatDate(value) {
@@ -71,13 +71,13 @@ const filteredPosts = computed(() => {
     const matchesCategory =
       selectedCategories.value.length === 0 || selectedCategories.value.includes(post.category)
     const matchesKeyword = !trimmedKeyword || post.title.toLowerCase().includes(trimmedKeyword)
-    return matchesCategory && matchesKeyword
+    const matchesLocation =
+      !selectedLocationFilter.value || post.location_id === selectedLocationFilter.value.content_id
+    return matchesCategory && matchesKeyword && matchesLocation
   })
 
   const sorted = [...filtered]
-  if (sortOption.value === 'rating') {
-    sorted.sort((a, b) => b.rating - a.rating)
-  } else if (sortOption.value === 'views') {
+  if (sortOption.value === 'views') {
     sorted.sort((a, b) => b.view_count - a.view_count)
   } else {
     sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -124,8 +124,8 @@ async function openPost(post) {
   const index = posts.value.findIndex((item) => item.id === post.id)
   const cached = index === -1 ? null : posts.value[index]
 
-  // 이미 상세(본문·댓글)를 불러온 적이 있으면 같은 객체를 재사용해 좋아요 상태와
-  // 조회수 중복 증가를 피한다. GET /api/posts/{id}는 호출할 때마다 조회수를 올린다.
+  // 이미 상세(본문·댓글)를 불러온 적이 있으면 같은 객체를 재사용해 조회수 중복 증가를 피한다.
+  // GET /api/posts/{id}는 호출할 때마다 조회수를 올린다.
   if (cached?.comments) {
     selectedPost.value = cached
     isPostModalOpen.value = true
@@ -138,9 +138,8 @@ async function openPost(post) {
 
   try {
     const detail = await getPost(post.id)
-    const merged = { like_count: 0, is_liked: false, ...detail }
-    if (index !== -1) posts.value[index] = merged
-    selectedPost.value = merged
+    if (index !== -1) posts.value[index] = detail
+    selectedPost.value = detail
   } catch (error) {
     isPostModalOpen.value = false
     showWriteToast(error.message || '게시글을 불러오지 못했어요.')
@@ -169,7 +168,7 @@ function closeWriteModal() {
 }
 
 function handlePostCreated(newPost) {
-  posts.value = [{ like_count: 0, is_liked: false, ...newPost }, ...posts.value]
+  posts.value = [newPost, ...posts.value]
   isWriteModalOpen.value = false
   showWriteToast('게시글이 등록되었어요.')
 }
@@ -206,6 +205,7 @@ function handlePostCreated(newPost) {
         aria-label="게시글 검색"
         autofocus
       />
+      <LocationSearchInput v-model="selectedLocationFilter" placeholder="장소명으로 검색해 보세요" />
     </div>
 
     <div class="category-chips" aria-label="게시글 카테고리 (중복 선택 가능)">
@@ -232,7 +232,6 @@ function handlePostCreated(newPost) {
       <span>총 {{ filteredPosts.length }}건</span>
       <select v-model="sortOption" aria-label="정렬 방식">
         <option value="latest">최신순</option>
-        <option value="rating">평점순</option>
         <option value="views">조회순</option>
       </select>
     </div>
@@ -248,12 +247,11 @@ function handlePostCreated(newPost) {
         @click="openPost(post)"
       >
         <div class="post-body">
-          <span class="post-category">{{ post.category }}</span>
+          <div class="post-pill-row">
+            <span class="post-category">{{ post.category }}</span>
+            <span v-if="post.location_title" class="post-location">📍 {{ post.location_title }}</span>
+          </div>
           <h3>{{ post.title }}</h3>
-          <p class="post-rating">
-            <span class="stars">{{ starDisplay(post.rating) }}</span>
-            <span>{{ (post.rating || 0).toFixed(1) }}</span>
-          </p>
           <small>조회 {{ post.view_count.toLocaleString() }} · {{ formatDate(post.created_at) }}</small>
         </div>
       </article>
@@ -366,7 +364,10 @@ function handlePostCreated(newPost) {
 }
 
 .board-search {
+  display: flex;
   margin-bottom: 16px;
+  gap: 10px;
+  flex-direction: column;
 }
 
 .board-search input {
@@ -387,7 +388,7 @@ function handlePostCreated(newPost) {
 }
 
 .board-page .category-chips {
-  justify-content: flex-start;
+  justify-content: center;
   margin-bottom: 20px;
 }
 
@@ -440,6 +441,12 @@ function handlePostCreated(newPost) {
   padding: 16px;
 }
 
+.post-pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .post-category {
   display: inline-block;
   padding: 4px 10px;
@@ -447,6 +454,20 @@ function handlePostCreated(newPost) {
   font-size: 10px;
   font-weight: 750;
   background: #f1edff;
+  border-radius: 999px;
+}
+
+.post-location {
+  display: inline-block;
+  max-width: 100%;
+  padding: 4px 10px;
+  overflow: hidden;
+  color: #56515d;
+  font-size: 10px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #f4f2f7;
   border-radius: 999px;
 }
 
@@ -458,21 +479,6 @@ function handlePostCreated(newPost) {
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.post-rating {
-  display: flex;
-  margin: 8px 0 0;
-  gap: 6px;
-  align-items: center;
-  color: #29272e;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.post-rating .stars {
-  color: #e9a900;
-  letter-spacing: 1px;
 }
 
 .post-body small {

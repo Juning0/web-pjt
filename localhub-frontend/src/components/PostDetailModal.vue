@@ -20,8 +20,6 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'deleted'])
 
-// 좋아요는 백엔드에 없는 필드라 이 컴포넌트 안에서만 관리한다(post.like_count/is_liked).
-// 나머지(본문·댓글·수정·삭제)는 실제 API를 호출한다.
 const post = ref(null)
 
 const isDeleteConfirmOpen = ref(false)
@@ -42,7 +40,6 @@ const isDeletingComment = ref(false)
 const isEditFormOpen = ref(false)
 const editTitle = ref('')
 const editContent = ref('')
-const editRating = ref(0)
 const editPassword = ref('')
 const editFormError = ref('')
 const isSavingEdit = ref(false)
@@ -65,7 +62,6 @@ function resetInteractionState() {
   isEditFormOpen.value = false
   editTitle.value = ''
   editContent.value = ''
-  editRating.value = 0
   editPassword.value = ''
   editFormError.value = ''
   isSavingEdit.value = false
@@ -76,35 +72,14 @@ watch(
   ([isOpen, nextPost]) => {
     if (isOpen && nextPost) {
       resetInteractionState()
-      // 부모가 들고 있는 같은 객체를 그대로 참조해서, 댓글·좋아요 변경이 다시 열어도 유지되게 한다.
+      // 부모가 들고 있는 같은 객체를 그대로 참조해서, 댓글 변경이 다시 열어도 유지되게 한다.
       post.value = nextPost
     }
   },
   { immediate: true },
 )
 
-function toggleLike() {
-  if (!post.value) return
-  if (post.value.is_liked) {
-    post.value.like_count = Math.max(0, (post.value.like_count || 0) - 1)
-    post.value.is_liked = false
-  } else {
-    post.value.like_count = (post.value.like_count || 0) + 1
-    post.value.is_liked = true
-  }
-}
-
 const authorContent = computed(() => parseAuthoredContent(post.value?.content))
-
-const ratingLabel = computed(() => {
-  if (!post.value || post.value.rating == null) return '평점 없음'
-  return `${post.value.rating.toFixed(1)}`
-})
-
-const starDisplay = computed(() => {
-  const rating = post.value?.rating || 0
-  return '★★★★★'.slice(0, rating).padEnd(5, '☆')
-})
 
 const metaLabel = computed(() => {
   if (!post.value) return ''
@@ -153,7 +128,6 @@ function openEditForm() {
   isDeleteConfirmOpen.value = false
   editTitle.value = post.value.title
   editContent.value = authorContent.value.body
-  editRating.value = post.value.rating || 0
   editPassword.value = ''
   editFormError.value = ''
   isEditFormOpen.value = true
@@ -163,7 +137,6 @@ function cancelEditForm() {
   isEditFormOpen.value = false
   editTitle.value = ''
   editContent.value = ''
-  editRating.value = 0
   editPassword.value = ''
   editFormError.value = ''
 }
@@ -186,9 +159,7 @@ async function saveEdit() {
       password: editPassword.value.trim(),
       title: editTitle.value.trim(),
       content: `[${authorContent.value.nickname}] ${editContent.value.trim()}`,
-      rating: editRating.value || null,
     })
-    // like_count/is_liked는 서버 응답에 없는 클라이언트 전용 필드라 그대로 유지된다.
     Object.assign(post.value, updated)
     cancelEditForm()
   } catch (error) {
@@ -311,34 +282,17 @@ async function submitComment() {
             <p v-if="loading" class="loading-text">불러오는 중...</p>
             <template v-else-if="post">
               <template v-if="!isEditFormOpen">
-                <span class="category-pill">{{ post.category }}</span>
+                <div class="pill-row">
+                  <span class="category-pill">{{ post.category }}</span>
+                  <span v-if="post.location_title" class="location-pill">📍 {{ post.location_title }}</span>
+                </div>
                 <h2 class="post-title">{{ post.title }}</h2>
 
-                <div class="rating-row">
-                  <span class="stars">{{ starDisplay }}</span>
-                  <span class="rating-label">{{ ratingLabel }}</span>
+                <div class="meta-row">
+                  <p class="meta-line">{{ metaLabel }}</p>
+                  <span class="author-badge">{{ authorContent.nickname }}</span>
                 </div>
 
-                <p class="meta-line">{{ metaLabel }}</p>
-
-                <button
-                  type="button"
-                  class="like-button"
-                  :class="{ liked: post.is_liked }"
-                  :aria-pressed="post.is_liked"
-                  @click="toggleLike"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      d="M12 20.5s-7.5-4.6-10-9.3C.5 8 2 4.5 5.5 4c2-.3 3.8.6 5 2.3C11.7 4.6 13.5 3.7 15.5 4c3.5.5 5 4 3.5 7.2-2.5 4.7-10 9.3-10 9.3Z"
-                    />
-                  </svg>
-                  좋아요 {{ post.like_count || 0 }}
-                </button>
-
-                <p class="author-line">
-                  <span class="author-badge">{{ authorContent.nickname }}</span>
-                </p>
                 <p class="post-content">{{ authorContent.body }}</p>
 
                 <div v-if="isDeleteConfirmOpen" class="delete-confirm">
@@ -366,18 +320,6 @@ async function submitComment() {
 
               <div v-else class="edit-form">
                 <span class="category-pill">{{ post.category }}</span>
-
-                <div class="rating-picker" role="radiogroup" aria-label="별점 선택">
-                  <button
-                    v-for="value in 5"
-                    :key="value"
-                    type="button"
-                    :class="['star-button', { filled: value <= editRating }]"
-                    :aria-pressed="value <= editRating"
-                    :aria-label="`${value}점`"
-                    @click="editRating = value"
-                  >★</button>
-                </div>
 
                 <input
                   v-model="editTitle"
@@ -470,7 +412,7 @@ async function submitComment() {
                   <div class="comment-form-row">
                     <input
                       v-model="commentNickname"
-                      class="text-input nickname-input"
+                      class="text-input"
                       maxlength="20"
                       placeholder="닉네임"
                       required
@@ -483,14 +425,14 @@ async function submitComment() {
                     >
                       추천
                     </button>
+                    <input
+                      v-model="commentPassword"
+                      type="password"
+                      class="text-input"
+                      placeholder="비밀번호"
+                      required
+                    />
                   </div>
-                  <input
-                    v-model="commentPassword"
-                    type="password"
-                    class="text-input"
-                    placeholder="비밀번호"
-                    required
-                  />
                   <button class="submit-button" type="submit" :disabled="isSubmittingComment">
                     {{ isSubmittingComment ? '등록 중...' : '댓글 남기기' }}
                   </button>
@@ -529,7 +471,6 @@ async function submitComment() {
   --soft: #f7f6f8;
   --purple: #7e66e2;
   --purple-soft: #f1edff;
-  --star: #e9a900;
   position: relative;
   display: flex;
   width: min(420px, 100%);
@@ -623,6 +564,12 @@ async function submitComment() {
   text-align: center;
 }
 
+.pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .category-pill {
   display: inline-block;
   padding: 5px 11px;
@@ -633,6 +580,19 @@ async function submitComment() {
   border-radius: 999px;
 }
 
+.location-pill {
+  display: inline-block;
+  padding: 5px 11px;
+  overflow: hidden;
+  color: #56515d;
+  font-size: 11px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--soft);
+  border-radius: 999px;
+}
+
 .post-title {
   margin: 12px 0 0;
   font-size: 20px;
@@ -640,82 +600,28 @@ async function submitComment() {
   letter-spacing: -0.02em;
 }
 
-.rating-row {
+.meta-row {
   display: flex;
   margin-top: 8px;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 8px;
-  align-items: center;
-}
-
-.stars {
-  color: var(--star);
-  font-size: 15px;
-  letter-spacing: 1px;
-}
-
-.rating-label {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
 }
 
 .meta-line {
-  margin: 8px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 11.5px;
 }
 
-.like-button {
-  display: inline-flex;
-  padding: 7px 14px;
-  margin-top: 12px;
-  gap: 6px;
-  color: #56515d;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  background: #fff;
-  border: 1px solid #d7d4db;
-  border-radius: 999px;
-  cursor: pointer;
-  align-items: center;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
-}
-
-.like-button:hover {
-  border-color: var(--purple);
-}
-
-.like-button svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.like-button.liked {
-  color: var(--purple);
-  background: var(--purple-soft);
-  border-color: var(--purple);
-}
-
-.like-button.liked svg {
-  fill: currentColor;
-}
-
-.author-line {
-  margin: 16px 0 0;
-}
-
 .author-badge {
   display: inline-block;
+  flex: 0 0 auto;
   padding: 4px 10px;
   color: #56515d;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
   background: var(--soft);
   border-radius: 999px;
 }
@@ -906,11 +812,13 @@ async function submitComment() {
   gap: 8px;
 }
 
-.nickname-input {
-  flex: 1;
+.comment-form-row input {
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 .nickname-suggest {
+  flex: 0 0 auto;
   padding: 0 14px;
   color: var(--purple);
   font: inherit;
@@ -975,27 +883,6 @@ async function submitComment() {
 
 .edit-form .category-pill {
   align-self: flex-start;
-}
-
-.rating-picker {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.star-button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: #d8d5db;
-  font-size: 19px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-
-.star-button.filled {
-  color: var(--star);
 }
 
 .edit-form-actions {

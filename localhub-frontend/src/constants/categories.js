@@ -17,3 +17,16 @@ const LOCATION_CATEGORY_OVERRIDES = {
 export function toLocationCategory(category) {
   return LOCATION_CATEGORY_OVERRIDES[category] || category
 }
+
+const POST_CATEGORY_BY_LOCATION_CATEGORY = Object.fromEntries(
+  Object.entries(LOCATION_CATEGORY_OVERRIDES).map(([postCategory, locationCategory]) => [
+    locationCategory,
+    postCategory,
+  ]),
+)
+
+// 장소(Location)의 카테고리 값을 게시글 카테고리 표기로 되돌린다. 글쓰기 시 장소를 고르면
+// 그 장소의 카테고리를 그대로 게시글 카테고리로 써야 하기 때문에 필요하다.
+export function toPostCategory(locationCategory) {
+  return POST_CATEGORY_BY_LOCATION_CATEGORY[locationCategory] || locationCategory
+}

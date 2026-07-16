@@ -72,6 +72,8 @@ class PostListItem(BaseModel):
     title: str
     rating: Optional[int]
     view_count: int
+    location_id: Optional[str] = None
+    location_title: Optional[str] = None
     created_at: datetime
 
 
@@ -85,6 +87,7 @@ class PostDetail(BaseModel):
     rating: Optional[int]
     view_count: int
     location_id: Optional[str]
+    location_title: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     comments: list[CommentOut] = []

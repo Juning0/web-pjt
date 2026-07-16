@@ -1,8 +1,9 @@
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
-import { CATEGORIES } from '@/constants/categories'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { toPostCategory } from '@/constants/categories'
 import { randomNickname } from '@/utils/nickname'
 import { createPost } from '@/api/posts'
+import LocationSearchInput from '@/components/LocationSearchInput.vue'
 
 const props = defineProps({
   open: {
@@ -13,19 +14,22 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'created'])
 
-const selectedCategory = ref(null)
-const rating = ref(0)
 const title = ref('')
+const selectedLocation = ref(null)
 const content = ref('')
 const nickname = ref(randomNickname())
 const password = ref('')
 const isSubmitting = ref(false)
 const formError = ref('')
 
+// 게시글 카테고리는 사용자가 고르지 않고, 선택한 장소의 카테고리를 그대로 태그처럼 따라간다.
+const selectedCategory = computed(() =>
+  selectedLocation.value ? toPostCategory(selectedLocation.value.category) : null,
+)
+
 function resetForm() {
-  selectedCategory.value = null
-  rating.value = 0
   title.value = ''
+  selectedLocation.value = null
   content.value = ''
   nickname.value = randomNickname()
   password.value = ''
@@ -39,10 +43,6 @@ watch(
     if (isOpen) resetForm()
   },
 )
-
-function toggleCategory(category) {
-  selectedCategory.value = selectedCategory.value === category ? null : category
-}
 
 function handleClose() {
   emit('close')
@@ -68,8 +68,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 async function submitPost() {
   if (isSubmitting.value) return
 
-  if (!selectedCategory.value) {
-    formError.value = '카테고리를 선택해 주세요.'
+  if (!selectedLocation.value) {
+    formError.value = '장소를 검색해서 선택해 주세요.'
     return
   }
   if (!title.value.trim() || !content.value.trim() || !nickname.value.trim() || !password.value.trim()) {
@@ -84,9 +84,9 @@ async function submitPost() {
     const created = await createPost({
       category: selectedCategory.value,
       title: title.value.trim(),
+      location_id: selectedLocation.value.content_id,
       content: `[${nickname.value.trim()}] ${content.value.trim()}`,
       password: password.value.trim(),
-      rating: rating.value || null,
     })
     emit('created', created)
   } catch (error) {
@@ -113,33 +113,11 @@ async function submitPost() {
           </header>
 
           <form class="modal-body" @submit.prevent="submitPost">
-            <label class="field-label">카테고리</label>
-            <div class="category-chips" aria-label="게시글 카테고리 선택">
-              <button
-                v-for="category in CATEGORIES"
-                :key="category"
-                type="button"
-                :class="{ active: selectedCategory === category }"
-                :aria-pressed="selectedCategory === category"
-                @click="toggleCategory(category)"
-              >
-                {{ category }}
-              </button>
+            <div class="location-label-row">
+              <label class="field-label">장소</label>
+              <span v-if="selectedCategory" class="location-category-badge">{{ selectedCategory }}</span>
             </div>
-
-            <label class="field-label">평점</label>
-            <div class="rating-picker" role="radiogroup" aria-label="별점 선택">
-              <button
-                v-for="value in 5"
-                :key="value"
-                type="button"
-                :class="['star-button', { filled: value <= rating }]"
-                :aria-pressed="value <= rating"
-                :aria-label="`${value}점`"
-                @click="rating = value"
-              >★</button>
-              <span v-if="!rating" class="rating-hint">탭해서 선택</span>
-            </div>
+            <LocationSearchInput v-model="selectedLocation" placeholder="장소명을 검색해 주세요" />
 
             <input
               v-model="title"
@@ -215,7 +193,6 @@ async function submitPost() {
   --soft: #f7f6f8;
   --purple: #7e66e2;
   --purple-soft: #f1edff;
-  --star: #e9a900;
   display: flex;
   width: min(420px, 100%);
   max-height: min(720px, calc(100dvh - 48px));
@@ -289,56 +266,24 @@ async function submitPost() {
   font-weight: 700;
 }
 
-.category-chips {
+.location-label-row {
   display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.category-chips button {
-  min-height: 30px;
-  padding: 5px 12px;
-  color: #625e67;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 650;
-  background: #fff;
-  border: 1px solid #d7d4db;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.category-chips button.active {
-  color: #fff;
-  background: var(--ink);
-  border-color: var(--ink);
-}
-
-.rating-picker {
-  display: flex;
-  gap: 4px;
+  margin-top: 8px;
   align-items: center;
+  gap: 8px;
 }
 
-.star-button {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: #d8d5db;
-  font-size: 19px;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
+.location-label-row .field-label {
+  margin-top: 0;
 }
 
-.star-button.filled {
-  color: var(--star);
-}
-
-.rating-hint {
-  margin-left: 6px;
-  color: #a19da6;
-  font-size: 11px;
+.location-category-badge {
+  padding: 3px 10px;
+  color: var(--purple);
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--purple-soft);
+  border-radius: 999px;
 }
 
 .text-input,
