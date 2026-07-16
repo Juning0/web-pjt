@@ -15,6 +15,12 @@ class Settings(BaseSettings):
         "http://localhost:5174,http://127.0.0.1:5174"
     )
     OPENAI_API_KEY: str = ""
+    
+    CHAT_RATE_LIMIT_ENABLED: bool = True
+    CHAT_RATE_LIMIT_REQUESTS: int = 5
+    CHAT_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    CHAT_DAILY_LIMIT_PER_CLIENT: int = 50
+    CHAT_DAILY_LIMIT_GLOBAL: int = 200
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

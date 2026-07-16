@@ -36,6 +36,23 @@ const selectedLocationFilter = ref(null)
 const isSearchOpen = ref(Boolean(keyword.value))
 const sortOption = ref('latest')
 
+watch(
+  () => [route.query.category, route.query.keyword],
+  ([categoryQuery, keywordQuery]) => {
+    const categories =
+      typeof categoryQuery === 'string' ? categoryQuery.split(',') : []
+
+    selectedCategories.value = categories.filter((category) =>
+      CATEGORIES.includes(category),
+    )
+
+    keyword.value = typeof keywordQuery === 'string' ? keywordQuery : ''
+    isSearchOpen.value = Boolean(keyword.value)
+
+    fetchPosts()
+  },
+)
+
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
   return selectedCategories.value.includes(category)

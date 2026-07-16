@@ -14,21 +14,36 @@ export function getLocation(contentId) {
 }
 
 const LIST_ALL_PAGE_SIZE = 100
-const LIST_ALL_MAX_PAGES = 20 // 최대 2,000건까지 — 지도에 전부 표시해도 무리 없는 상한선
+const LIST_ALL_MAX_PAGES = 20
 
-// 지도는 필터에 맞는 장소를 전부 보여줘야 해서, 총 개수만큼 페이지를 이어서 가져온다.
+// 지도에 필요한 장소를 페이지별로 모두 불러와 하나의 배열로 합친다.
 export async function listAllLocations({ category, keyword } = {}) {
-  const first = await listLocations({ category, keyword, page: 1, size: LIST_ALL_PAGE_SIZE })
+  const first = await listLocations({
+    category,
+    keyword,
+    page: 1,
+    size: LIST_ALL_PAGE_SIZE,
+  })
+
   const totalPages = Math.min(
     Math.ceil(first.total / LIST_ALL_PAGE_SIZE) || 1,
     LIST_ALL_MAX_PAGES,
   )
 
   const restPages = []
-  for (let page = 2; page <= totalPages; page += 1) restPages.push(page)
+  for (let page = 2; page <= totalPages; page += 1) {
+    restPages.push(page)
+  }
 
   const rest = await Promise.all(
-    restPages.map((page) => listLocations({ category, keyword, page, size: LIST_ALL_PAGE_SIZE })),
+    restPages.map((page) =>
+      listLocations({
+        category,
+        keyword,
+        page,
+        size: LIST_ALL_PAGE_SIZE,
+      }),
+    ),
   )
 
   return [first.items, ...rest.map((response) => response.items)].flat()

@@ -18,23 +18,33 @@ export async function requestChat({ message, history, mode, apiBaseUrl }) {
     })
 
     if (!response.ok) {
-      let detail = ''
-      try {
-        const payload = await response.json()
-        if (typeof payload.detail === 'string') {
-          detail = `: ${payload.detail}`
-        } else if (Array.isArray(payload.detail)) {
-          const messages = payload.detail
-            .map((item) => item?.msg)
-            .filter(Boolean)
-            .join(', ')
-          detail = messages ? `: ${messages}` : ''
-        }
-      } catch {
-        // The response body is not JSON. The status code is enough for the user message.
-      }
-      throw new Error(`챗봇 서버 오류 (${response.status})${detail}`)
+  let detail = ''
+
+  try {
+    const payload = await response.json()
+
+    if (typeof payload.detail === 'string') {
+      detail = payload.detail
+    } else if (Array.isArray(payload.detail)) {
+      detail = payload.detail
+        .map((item) => item?.msg)
+        .filter(Boolean)
+        .join(', ')
     }
+  } catch {
+    // JSON 응답이 아니면 상태 코드만 사용한다.
+  }
+
+  if (response.status === 429) {
+    throw new Error(
+      detail || '챗봇 요청 한도에 도달했어요. 잠시 후 다시 시도해 주세요.',
+    )
+  }
+
+  throw new Error(
+    `챗봇 서버 오류 (${response.status})${detail ? `: ${detail}` : ''}`,
+  )
+}
 
     return await response.json()
   } catch (error) {

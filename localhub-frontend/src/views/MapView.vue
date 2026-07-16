@@ -302,7 +302,7 @@ onMounted(async () => {
       ],
     })
     isMapReady.value = true
-    renderMarkers()
+    await fetchPlaces()
     focusRouteLocation()
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
