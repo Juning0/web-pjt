@@ -1,5 +1,27 @@
 @import './base.css';
 
+/* 챗봇 FAB의 위치/크기. --chat-fab-inset은 챗봇 FAB가 콘텐츠 영역 가장자리에서
+   유지하는 여백(뷰포트 기준이 아닌 순수 상수)이라, position:absolute로 map-stage
+   기준 좌표를 계산할 때도(지도 현위치 버튼) 그대로 재사용할 수 있다.
+   --chat-fab-right는 position:fixed인 챗봇 FAB 전용 뷰포트 계산식이라
+   map-stage 기준 요소에는 쓰면 안 된다(뷰포트가 1160px보다 넓어질수록
+   센터링 오프셋이 중복 적용됨). */
+:root {
+  --chat-fab-size: 58px;
+  --chat-fab-inset: 28px;
+  --chat-fab-right: max(var(--chat-fab-inset), calc((100vw - 1120px) / 2 + var(--chat-fab-inset)));
+  --chat-fab-bottom: 28px;
+  --fab-gap: 8px;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --chat-fab-inset: 18px;
+    --chat-fab-right: 18px;
+    --chat-fab-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+}
+
 #app {
   min-height: 100vh;
 }
@@ -62,6 +84,14 @@
 
 .site-header nav a:hover {
   color: #29272e;
+}
+
+.mobile-menu-button {
+  display: none;
+}
+
+.mobile-menu {
+  display: none;
 }
 
 .search-bar button {
@@ -666,6 +696,65 @@
 
   .site-header nav {
     display: none;
+  }
+
+  .mobile-menu-button {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    margin-left: auto;
+    padding: 0;
+    color: #29272e;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    place-items: center;
+  }
+
+  .mobile-menu-button svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 1.8;
+  }
+
+  .mobile-menu {
+    position: sticky;
+    top: 68px;
+    z-index: 49;
+    display: flex;
+    width: min(100% - 28px, 1120px);
+    margin: 0 auto;
+    padding: 8px 4px;
+    background: #fff;
+    border-bottom: 1px solid #ececef;
+    box-shadow: 0 12px 20px rgb(24 24 27 / 6%);
+    flex-direction: column;
+  }
+
+  .mobile-menu a {
+    padding: 12px 10px;
+    color: #29272e;
+    font-size: 14.5px;
+    font-weight: 650;
+    text-decoration: none;
+  }
+
+  .mobile-menu a.router-link-active {
+    color: #7e66e2;
+  }
+
+  .mobile-menu-fade-enter-active,
+  .mobile-menu-fade-leave-active {
+    transition: opacity 140ms ease;
+  }
+
+  .mobile-menu-fade-enter-from,
+  .mobile-menu-fade-leave-to {
+    opacity: 0;
   }
 
   .page-shell {

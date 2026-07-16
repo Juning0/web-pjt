@@ -122,13 +122,14 @@ async function submitPost() {
             <input
               v-model="title"
               class="text-input"
-              maxlength="200"
-              placeholder="제목"
+              maxlength="20"
+              placeholder="제목 (최대 20자)"
             />
             <textarea
               v-model="content"
               class="text-area"
-              placeholder="내용을 입력하세요..."
+              maxlength="100"
+              placeholder="내용을 입력하세요... (최대 100자)"
             ></textarea>
 
             <div class="nickname-password-row">

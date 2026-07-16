@@ -585,12 +585,12 @@ function eventDateLabel(source) {
 
 .chat-launcher {
   position: fixed;
-  right: max(28px, calc((100vw - 1120px) / 2 + 28px));
-  bottom: 28px;
+  right: var(--chat-fab-right);
+  bottom: var(--chat-fab-bottom);
   z-index: 1000;
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: var(--chat-fab-size);
+  height: var(--chat-fab-size);
   padding: 0;
   place-items: center;
   color: #a993ff;
@@ -1312,11 +1312,6 @@ function eventDateLabel(source) {
 
   .chat-header {
     padding-top: max(12px, env(safe-area-inset-top));
-  }
-
-  .chat-launcher {
-    right: 18px;
-    bottom: max(18px, env(safe-area-inset-bottom));
   }
 
   .chat-composer {

@@ -41,6 +41,13 @@ const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" 
 </svg>`
 const PIN_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PIN_SVG)}`
 
+// "내 위치" 마커 — 장소 핀과 구분되도록 파란 GPS 점 스타일로 그린다.
+const MY_LOCATION_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+  <circle cx="13" cy="13" r="12" fill="#4285f4" fill-opacity="0.22"/>
+  <circle cx="13" cy="13" r="6" fill="#4285f4" stroke="#fff" stroke-width="2.5"/>
+</svg>`
+const MY_LOCATION_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(MY_LOCATION_SVG)}`
+
 // 잘못된 좌표 한 건이 전체 지도 범위를 한국 밖까지 넓히지 않도록 방어한다.
 // 대전여지도 데이터 범위(대전·충청)를 넉넉하게 포함하는 대한민국 영역이다.
 const KOREA_COORDINATE_BOUNDS = Object.freeze({
@@ -100,6 +107,7 @@ let kakaoRef = null
 let clusterer = null
 let markers = []
 let highlightedMarker = null
+let myLocationMarker = null
 
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
@@ -140,12 +148,34 @@ function closePlaceModal() {
 }
 
 function handleSelectLocation(source) {
-  const coordinates = getValidCoordinates(source)
-  if (!mapInstance || !kakaoRef || !coordinates) {
+  const latitude = source.latitude ?? source.lat
+  const longitude = source.longitude ?? source.lng
+  if (latitude == null || longitude == null) {
     showLocateError('이 장소의 지도 좌표가 올바르지 않아요.')
     return
   }
-  mapInstance.panTo(new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng))
+
+  // 홈 화면의 장소 모달에서 "지도에서 보기"를 눌렀을 때와 동일하게, 쿼리를 갱신해서
+  // 단일 장소 포커스(route-focus) 화면으로 들어가게 한다.
+  closePlaceModal()
+  const query = {
+    id: String(source.id ?? source.content_id ?? ''),
+    title: source.title ?? '',
+    category: source.category ?? '',
+    address: source.address ?? source.addr1 ?? '',
+    lat: String(latitude),
+    lng: String(longitude),
+  }
+  if (source.rating != null || source.avg_rating != null) {
+    query.rating = String(source.rating ?? source.avg_rating)
+  }
+  if (source.review_count != null) {
+    query.reviews = String(source.review_count)
+  }
+  if (source.image_url || source.first_image) {
+    query.image = source.image_url || source.first_image
+  }
+  router.push({ name: 'map', query })
 }
 
 function firstQueryValue(value) {
@@ -293,10 +323,23 @@ function locateMe() {
   navigator.geolocation.getCurrentPosition(
     (position) => {
       if (!mapInstance || !kakaoRef) return
+      const here = new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude)
       mapInstance.setLevel(5)
-      mapInstance.panTo(
-        new kakaoRef.maps.LatLng(position.coords.latitude, position.coords.longitude),
+      mapInstance.panTo(here)
+
+      myLocationMarker?.setMap(null)
+      const markerImage = new kakaoRef.maps.MarkerImage(
+        MY_LOCATION_IMAGE_SRC,
+        new kakaoRef.maps.Size(26, 26),
+        { offset: new kakaoRef.maps.Point(13, 13) },
       )
+      myLocationMarker = new kakaoRef.maps.Marker({
+        map: mapInstance,
+        position: here,
+        image: markerImage,
+        title: '내 위치',
+        zIndex: 10,
+      })
     },
     () => {
       showLocateError('위치 정보를 가져오지 못했어요. 권한을 확인해 주세요.')
@@ -346,6 +389,8 @@ onUnmounted(() => {
   clearMarkers()
   highlightedMarker?.setMap(null)
   highlightedMarker = null
+  myLocationMarker?.setMap(null)
+  myLocationMarker = null
   clusterer = null
   mapInstance = null
   kakaoRef = null
@@ -734,9 +779,13 @@ watch(
 
 .locate-button {
   position: absolute;
-  right: 14px;
-  /* 챗봇 FAB(58px, bottom 28px)와 겹치지 않도록 그 위에 쌓는다. */
-  bottom: 96px;
+  /* map-stage는 position:relative 컨테이너라 여기 right/bottom은 뷰포트가 아니라
+     map-stage 기준이다. map-stage 오른쪽/아래쪽 끝은 데스크톱에서 뷰포트의
+     콘텐츠 영역 끝과 일치하므로, 챗봇 FAB의 뷰포트 계산식(--chat-fab-right)이
+     아니라 그 FAB가 유지하는 순수 여백 상수(--chat-fab-inset)만 재사용해야
+     오프셋이 중복 적용되지 않는다. */
+  right: calc(var(--chat-fab-inset) + var(--chat-fab-size) + var(--fab-gap));
+  bottom: var(--chat-fab-bottom);
   z-index: 10;
   display: grid;
   width: 42px;
@@ -753,6 +802,13 @@ watch(
 
 .locate-button:hover {
   color: #7e66e2;
+}
+
+/* 챗봇 FAB(button.chat-launcher)와 챗봇 패널(section.chat-panel)은 서로 배타적으로
+   렌더링된다(v-if="!isOpen" / v-else). 챗봇이 열려 FAB가 사라지면 그만큼 자리를
+   비워둘 필요가 없으니, FAB 크기+간격만큼 빼서 모서리에 더 붙인다. */
+body:has(.chat-panel) .locate-button {
+  right: var(--chat-fab-inset);
 }
 
 .locate-button svg {
@@ -810,7 +866,7 @@ watch(
   left: 14px;
   z-index: 10;
   display: flex;
-  width: min(420px, calc(100% - 28px));
+  width: calc(100% - 28px);
   min-height: 46px;
   padding: 0 16px;
   gap: 9px;
@@ -879,7 +935,7 @@ watch(
   left: 14px;
   z-index: 10;
   justify-content: flex-start;
-  width: min(420px, calc(100% - 28px));
+  width: calc(100% - 28px);
   padding: 9px 10px;
   overflow-x: auto;
   flex-wrap: nowrap;
@@ -974,8 +1030,10 @@ watch(
   }
 
   .locate-button {
-    /* 모바일 챗봇 FAB(bottom: max(18px, safe-area))보다 위에 오도록 맞춘다. */
-    bottom: max(86px, calc(env(safe-area-inset-bottom) + 86px));
+    /* 모바일은 챗봇 FAB가 지도 아래 리스트 패널 쪽에 걸쳐 있어서, 챗봇 FAB
+       위치/상태와 무관하게 챗봇이 아예 없는 것처럼 기본 위치를 쓴다. */
+    right: 14px;
+    bottom: 14px;
   }
 }
 </style>

@@ -48,7 +48,7 @@ class PasswordCheck(BaseModel):
 # ---------- Post ----------
 class PostCreate(BaseModel):
     category: str
-    title: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=20)
     content: str = Field(min_length=1)
     password: str = Field(min_length=1)
     rating: Optional[int] = Field(default=None, ge=1, le=5)
@@ -58,7 +58,7 @@ class PostCreate(BaseModel):
 class PostUpdate(BaseModel):
     """비밀번호 + 수정할 내용."""
     password: str = Field(min_length=1)
-    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    title: Optional[str] = Field(default=None, min_length=1, max_length=20)
     content: Optional[str] = Field(default=None, min_length=1)
     rating: Optional[int] = Field(default=None, ge=1, le=5)
 

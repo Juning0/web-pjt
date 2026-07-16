@@ -7,6 +7,7 @@ import PlaceDetailModal from '@/components/PlaceDetailModal.vue'
 
 const router = useRouter()
 const toast = ref('')
+const isMobileMenuOpen = ref(false)
 const selectedChatPlace = ref(null)
 const isChatPlaceModalOpen = ref(false)
 const isChatPlaceDetailLoading = ref(false)
@@ -129,7 +130,26 @@ provide('showIntegrationEvent', openLocationFromChat)
         <RouterLink to="/map">지도</RouterLink>
         <RouterLink to="/board">커뮤니티</RouterLink>
       </nav>
+      <button
+        class="mobile-menu-button"
+        type="button"
+        aria-label="메뉴 열기"
+        :aria-expanded="isMobileMenuOpen"
+        @click="isMobileMenuOpen = !isMobileMenuOpen"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
     </header>
+
+    <Transition name="mobile-menu-fade">
+      <nav v-if="isMobileMenuOpen" class="mobile-menu" aria-label="주요 메뉴 (모바일)">
+        <RouterLink to="/explore" @click="isMobileMenuOpen = false">둘러보기</RouterLink>
+        <RouterLink to="/map" @click="isMobileMenuOpen = false">지도</RouterLink>
+        <RouterLink to="/board" @click="isMobileMenuOpen = false">커뮤니티</RouterLink>
+      </nav>
+    </Transition>
 
     <div class="page-shell">
       <RouterView />

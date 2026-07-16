@@ -375,13 +375,14 @@ async function submitComment() {
       <input
         v-model="editTitle"
         class="text-input"
-        maxlength="200"
-        placeholder="제목"
+        maxlength="20"
+        placeholder="제목 (최대 20자)"
       />
       <textarea
         v-model="editContent"
         class="text-area"
-        placeholder="내용을 입력하세요..."
+        maxlength="100"
+        placeholder="내용을 입력하세요... (최대 100자)"
       ></textarea>
       <input
         v-model="editPassword"
@@ -457,7 +458,8 @@ async function submitComment() {
         <textarea
           v-model="commentContent"
           class="text-area"
-          placeholder="댓글을 남겨보세요"
+          maxlength="100"
+          placeholder="댓글을 남겨보세요 (최대 100자)"
           required
         ></textarea>
         <div class="comment-form-row">

@@ -155,9 +155,13 @@ function handleViewOnMap() {
     type: 'location',
     id: location.value.content_id,
     title: location.value.title,
+    category: location.value.category,
     lat: location.value.lat,
     lng: location.value.lng,
     address: location.value.addr1,
+    avg_rating: location.value.avg_rating,
+    review_count: location.value.review_count,
+    first_image: location.value.first_image,
   })
 }
 
@@ -336,14 +340,15 @@ async function submitReview() {
                   <input
                     v-model="reviewTitle"
                     class="text-input"
-                    maxlength="200"
-                    placeholder="한 줄 제목"
+                    maxlength="20"
+                    placeholder="한 줄 제목 (최대 20자)"
                     required
                   />
                   <textarea
                     v-model="reviewContent"
                     class="text-area"
-                    placeholder="다녀온 경험을 남겨주세요"
+                    maxlength="100"
+                    placeholder="다녀온 경험을 남겨주세요 (최대 100자)"
                     required
                   ></textarea>
                   <input

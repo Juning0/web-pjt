@@ -555,6 +555,7 @@ function handlePostCreated(newPost) {
 
 @media (max-width: 760px) {
   .post-grid {
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 
