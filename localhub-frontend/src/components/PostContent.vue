@@ -17,8 +17,6 @@ const props = defineProps({
 
 const emit = defineEmits(['deleted', 'select-location'])
 
-// 좋아요는 백엔드에 없는 필드라 이 컴포넌트 안에서만 관리한다(post.like_count/is_liked).
-// 나머지(본문·댓글·수정·삭제)는 실제 API를 호출한다.
 const post = ref(null)
 
 // location_id가 있는 게시글은 특정 장소에 대한 리뷰다. 목록 응답엔 장소 정보가 없어 따로 조회한다.
@@ -92,7 +90,7 @@ watch(
   (nextPost) => {
     if (!nextPost) return
     resetInteractionState()
-    // 부모가 들고 있는 같은 객체를 그대로 참조해서, 댓글·좋아요 변경이 다시 열어도 유지되게 한다.
+    // 부모가 들고 있는 같은 객체를 그대로 참조해서, 댓글 변경이 다시 열어도 유지되게 한다.
     post.value = nextPost
     fetchReviewedPlace(nextPost.location_id)
   },
@@ -105,21 +103,11 @@ function handleViewPlaceOnMap() {
     type: 'location',
     id: reviewedPlace.value.content_id,
     title: reviewedPlace.value.title,
+    category: reviewedPlace.value.category,
     lat: reviewedPlace.value.lat,
     lng: reviewedPlace.value.lng,
     address: reviewedPlace.value.addr1,
   })
-}
-
-function toggleLike() {
-  if (!post.value) return
-  if (post.value.is_liked) {
-    post.value.like_count = Math.max(0, (post.value.like_count || 0) - 1)
-    post.value.is_liked = false
-  } else {
-    post.value.like_count = (post.value.like_count || 0) + 1
-    post.value.is_liked = true
-  }
 }
 
 const authorContent = computed(() => parseAuthoredContent(post.value?.content))
@@ -195,7 +183,6 @@ async function saveEdit() {
       content: `[${authorContent.value.nickname}] ${editContent.value.trim()}`,
       rating: editRating.value || null,
     })
-    // like_count/is_liked는 서버 응답에 없는 클라이언트 전용 필드라 그대로 유지된다.
     Object.assign(post.value, updated)
     cancelEditForm()
   } catch (error) {
@@ -307,9 +294,9 @@ async function submitComment() {
       <div class="rating-row">
         <span class="stars">{{ starDisplay }}</span>
         <span class="rating-label">{{ ratingLabel }}</span>
+        <span class="meta-divider" aria-hidden="true">·</span>
+        <span class="meta-line">{{ metaLabel }}</span>
       </div>
-
-      <p class="meta-line">{{ metaLabel }}</p>
 
       <p v-if="post.location_id && isPlaceLoading" class="place-chip-loading">
         장소 정보를 불러오는 중...
@@ -317,33 +304,29 @@ async function submitComment() {
       <button
         v-else-if="reviewedPlace"
         type="button"
-        class="place-chip"
+        class="place-card"
         @click="handleViewPlaceOnMap"
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11Z" />
-          <circle cx="12" cy="10" r="2.5" />
-        </svg>
-        <span class="place-chip-text">
-          <span class="place-chip-label">이 장소에 대한 리뷰예요</span>
-          <span class="place-chip-title">{{ reviewedPlace.title }}</span>
-        </span>
-        <span class="place-chip-action">지도에서 보기 →</span>
-      </button>
-
-      <button
-        type="button"
-        class="like-button"
-        :class="{ liked: post.is_liked }"
-        :aria-pressed="post.is_liked"
-        @click="toggleLike"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M12 20.5s-7.5-4.6-10-9.3C.5 8 2 4.5 5.5 4c2-.3 3.8.6 5 2.3C11.7 4.6 13.5 3.7 15.5 4c3.5.5 5 4 3.5 7.2-2.5 4.7-10 9.3-10 9.3Z"
+        <div class="place-card-thumb">
+          <img
+            v-if="reviewedPlace.first_image"
+            :src="reviewedPlace.first_image"
+            :alt="`${reviewedPlace.title} 사진`"
+            loading="lazy"
           />
-        </svg>
-        좋아요 {{ post.like_count || 0 }}
+          <div v-else class="no-image" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 18V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12H4Zm0-3 4-4 3 3 2-2 5 5M15.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />
+            </svg>
+          </div>
+          <span class="place-card-badge">{{ reviewedPlace.category }}</span>
+        </div>
+        <div class="place-card-body">
+          <span class="place-card-label">이 장소에 대한 리뷰예요</span>
+          <h3>{{ reviewedPlace.title }}</h3>
+          <small>{{ reviewedPlace.addr1 }}</small>
+          <span class="place-card-action">지도에서 보기 →</span>
+        </div>
       </button>
 
       <p class="author-line">
@@ -514,7 +497,7 @@ async function submitComment() {
 .loading-text {
   padding: 40px 0;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 14px;
   text-align: center;
 }
 
@@ -528,7 +511,7 @@ async function submitComment() {
   display: inline-block;
   padding: 5px 11px;
   color: var(--purple);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 750;
   background: var(--purple-soft);
   border-radius: 999px;
@@ -544,7 +527,7 @@ async function submitComment() {
   padding: 4px 2px;
   color: #56515d;
   font: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   background: transparent;
   border: 0;
@@ -567,142 +550,152 @@ async function submitComment() {
 
 .post-title {
   margin: 12px 0 0;
-  font-size: 20px;
+  font-size: 23px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .rating-row {
   display: flex;
-  margin-top: 8px;
-  gap: 8px;
+  margin-top: 9px;
+  gap: 9px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .stars {
   color: var(--star);
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: 1px;
 }
 
 .rating-label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 650;
 }
 
-.meta-line {
-  margin: 8px 0 0;
+.meta-divider {
   color: var(--muted);
-  font-size: 11.5px;
+}
+
+.meta-line {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .place-chip-loading {
   margin: 12px 0 0;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
-.place-chip {
-  display: flex;
+.place-card {
+  display: block;
   width: 100%;
-  padding: 10px 12px;
+  padding: 0;
   margin-top: 12px;
-  gap: 10px;
+  overflow: hidden;
   text-align: left;
-  background: var(--soft);
-  border: 1px solid var(--line);
-  border-radius: 10px;
   cursor: pointer;
-  align-items: center;
-  transition: border-color 160ms ease;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 160ms ease;
 }
 
-.place-chip:hover {
+.place-card:hover {
   border-color: var(--purple);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgb(24 24 27 / 8%);
 }
 
-.place-chip svg {
-  width: 18px;
-  height: 18px;
-  color: var(--purple);
-  flex: 0 0 auto;
+.place-card-thumb {
+  position: relative;
+  display: flex;
+  height: 140px;
+  padding: 10px;
+  align-items: flex-end;
+  background-color: var(--soft);
+}
+
+.place-card-thumb img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.place-card-thumb .no-image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  color: #c7c5ca;
+  align-items: center;
+  justify-content: center;
+}
+
+.place-card-thumb .no-image svg {
+  width: 28px;
+  height: 28px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.8;
+  stroke-width: 1.5;
 }
 
-.place-chip-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
+.place-card-badge {
+  position: relative;
+  z-index: 1;
+  padding: 5px 9px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #29272e;
+  border-radius: 999px;
 }
 
-.place-chip-label {
+.place-card-body {
+  padding: 12px 14px 14px;
+}
+
+.place-card-label {
+  display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 650;
 }
 
-.place-chip-title {
+.place-card-body h3 {
+  margin: 4px 0 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 15.5px;
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.place-chip-action {
-  color: var(--purple);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
-.like-button {
-  display: inline-flex;
-  padding: 7px 14px;
-  margin-top: 12px;
-  gap: 6px;
-  color: #56515d;
-  font: inherit;
+.place-card-body small {
+  display: block;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
-  background: #fff;
-  border: 1px solid #d7d4db;
-  border-radius: 999px;
-  cursor: pointer;
-  align-items: center;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.like-button:hover {
-  border-color: var(--purple);
-}
-
-.like-button svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.like-button.liked {
+.place-card-action {
+  display: inline-block;
+  margin-top: 8px;
   color: var(--purple);
-  background: var(--purple-soft);
-  border-color: var(--purple);
-}
-
-.like-button.liked svg {
-  fill: currentColor;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
 .author-line {
@@ -713,7 +706,7 @@ async function submitComment() {
   display: inline-block;
   padding: 4px 10px;
   color: #56515d;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   background: var(--soft);
   border-radius: 999px;
@@ -722,7 +715,7 @@ async function submitComment() {
 .post-content {
   margin: 10px 0 0;
   color: #3c3842;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: keep-all;
@@ -740,7 +733,7 @@ async function submitComment() {
 .delete-confirm > p {
   margin: 0 0 9px;
   color: #9b2f2f;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 650;
 }
 
@@ -755,7 +748,7 @@ async function submitComment() {
   flex: 1;
   min-height: 38px;
   font: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   border-radius: 8px;
   cursor: pointer;
@@ -782,7 +775,7 @@ async function submitComment() {
 .comment-heading {
   margin: 0 0 12px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 750;
 }
 
@@ -809,7 +802,7 @@ async function submitComment() {
 
 .comment-nickname {
   color: var(--purple);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 750;
 }
 
@@ -822,14 +815,14 @@ async function submitComment() {
 
 .comment-time {
   color: #a19da6;
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .comment-delete {
   padding: 0;
   color: #a19da6;
   font: inherit;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 650;
   background: transparent;
   border: 0;
@@ -859,7 +852,7 @@ async function submitComment() {
   flex: 1;
   min-height: 32px;
   font: inherit;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   border-radius: 7px;
   cursor: pointer;
@@ -880,7 +873,7 @@ async function submitComment() {
 .comment-body {
   margin: 4px 0 0;
   color: #3c3842;
-  font-size: 12.5px;
+  font-size: 14px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: keep-all;
@@ -890,7 +883,7 @@ async function submitComment() {
 .comment-empty {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .comment-form {
@@ -913,7 +906,7 @@ async function submitComment() {
   padding: 0 14px;
   color: var(--purple);
   font: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   white-space: nowrap;
   background: var(--purple-soft);
@@ -932,7 +925,7 @@ async function submitComment() {
   padding: 10px 11px;
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   background: #fff;
   border: 1px solid #cbc8d0;
   border-radius: 9px;
@@ -947,7 +940,7 @@ async function submitComment() {
   min-height: 42px;
   color: #fff;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 750;
   background: var(--purple);
   border: 0;
@@ -963,7 +956,7 @@ async function submitComment() {
 .form-error {
   margin: 8px 0 0;
   color: #9b2f2f;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
 .edit-form {
@@ -983,11 +976,11 @@ async function submitComment() {
 }
 
 .star-button {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   color: #d8d5db;
-  font-size: 19px;
+  font-size: 21px;
   background: transparent;
   border: 0;
   cursor: pointer;

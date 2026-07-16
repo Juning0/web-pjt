@@ -77,6 +77,11 @@ class Post(Base):
         """목록/상세에서 장소를 태그로 보여주기 위한 편의 속성."""
         return self.location.title if self.location else None
 
+    @property
+    def location_image(self):
+        """목록에서 리뷰 카드에 장소 사진을 보여주기 위한 편의 속성."""
+        return self.location.first_image if self.location else None
+
 
 class Comment(Base):
     """게시글 댓글. 익명 + 수정용 비밀번호(평문)."""

@@ -98,6 +98,10 @@ let clusterer = null
 let markers = []
 let highlightedMarker = null
 
+// 리뷰 모달의 "지도에서 보기"처럼 특정 장소 하나만 보여줘야 할 때 true.
+// 이 동안은 전체 목록을 불러오지 않고 그 장소 마커만 띄운다.
+const isSingleLocationFocus = ref(false)
+
 function isCategoryActive(category) {
   if (category === '전체') return selectedCategories.value.length === 0
   return selectedCategories.value.includes(category)
@@ -111,6 +115,10 @@ function toggleCategory(category) {
       ? selectedCategories.value.filter((item) => item !== category)
       : [...selectedCategories.value, category]
   }
+  // 카테고리를 직접 고르면 단일 장소 포커스에서 빠져나와 전체 목록을 본다.
+  isSingleLocationFocus.value = false
+  highlightedMarker?.setMap(null)
+  highlightedMarker = null
   fetchPlaces()
 }
 
@@ -166,19 +174,31 @@ function routeLocation() {
   }
 }
 
-function focusRouteLocation() {
+async function focusRouteLocation() {
   if (!mapInstance || !kakaoRef) return
   highlightedMarker?.setMap(null)
   highlightedMarker = null
 
   const place = routeLocation()
-  if (!place) return
+  if (!place) {
+    if (isSingleLocationFocus.value) {
+      // 단일 장소 포커스 상태에서 쿼리가 사라지면(뒤로가기 등) 전체 목록으로 되돌아간다.
+      isSingleLocationFocus.value = false
+      await fetchPlaces()
+    }
+    return
+  }
 
   const coordinates = getValidCoordinates(place)
   if (!coordinates) {
     showLocateError('선택한 장소의 지도 좌표가 올바르지 않아요.')
     return
   }
+
+  // 이 장소 하나만 보여줄 거라 기존에 그려둔 전체 마커는 지우고, 좌측 목록도 이 장소만 보이게 한다.
+  isSingleLocationFocus.value = true
+  clearMarkers()
+  places.value = [place]
 
   const position = new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng)
   const markerImage = new kakaoRef.maps.MarkerImage(
@@ -205,6 +225,8 @@ function clearMarkers() {
 
 function renderMarkers() {
   if (!mapInstance || !kakaoRef || !clusterer) return
+  // 단일 장소 포커스 중에는 highlightedMarker 하나만 보여주고, 클러스터 마커는 그리지 않는다.
+  if (isSingleLocationFocus.value) return
   clearMarkers()
 
   const mappablePlaces = visiblePlaces.value
@@ -302,12 +324,15 @@ onMounted(async () => {
       ],
     })
     isMapReady.value = true
-    await fetchPlaces()
-    focusRouteLocation()
+    if (routeLocation()) {
+      // 특정 장소를 보러 들어온 경우 전체 목록은 불러오지 않고 그 장소만 보여준다.
+      await focusRouteLocation()
+    } else {
+      await fetchPlaces()
+    }
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
   }
-  fetchPlaces()
 })
 
 onUnmounted(() => {

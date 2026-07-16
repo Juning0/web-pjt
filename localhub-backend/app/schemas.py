@@ -74,6 +74,7 @@ class PostListItem(BaseModel):
     view_count: int
     location_id: Optional[str] = None
     location_title: Optional[str] = None
+    location_image: Optional[str] = None
     created_at: datetime
 
 
