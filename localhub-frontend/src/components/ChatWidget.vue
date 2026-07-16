@@ -246,6 +246,12 @@ function selectSource(source) {
   )
 }
 
+function viewLocationOnMap(source) {
+  if (source.type !== 'location') return
+  closeChat()
+  selectSource(source)
+}
+
 function openLocationDetail(source) {
   if (source.type !== 'location') return
   emit('open-location-detail', source)
@@ -467,7 +473,7 @@ function eventDateLabel(source) {
                       <button
                         class="source-action"
                         type="button"
-                        @click.stop="selectSource(source)"
+                        @click.stop="viewLocationOnMap(source)"
                       >
                         지도에서 보기
                       </button>
