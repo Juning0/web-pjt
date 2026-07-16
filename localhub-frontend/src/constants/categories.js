@@ -17,3 +17,11 @@ const LOCATION_CATEGORY_OVERRIDES = {
 export function toLocationCategory(category) {
   return LOCATION_CATEGORY_OVERRIDES[category] || category
 }
+
+const POST_CATEGORY_OVERRIDES = Object.fromEntries(
+  Object.entries(LOCATION_CATEGORY_OVERRIDES).map(([post, location]) => [location, post]),
+)
+
+export function toPostCategory(category) {
+  return POST_CATEGORY_OVERRIDES[category] || category
+}
