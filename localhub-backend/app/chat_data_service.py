@@ -678,15 +678,15 @@ class LocalHubDataService:
                         and latitude is not None
                         and longitude is not None
                     ):
-                        candidate["distance_km"] = round(
-                            self._distance_km(
-                                anchor_latitude,
-                                anchor_longitude,
-                                latitude,
-                                longitude,
-                            ),
-                            2,
+                        distance = self._distance_km(
+                            anchor_latitude,
+                            anchor_longitude,
+                            latitude,
+                            longitude,
                         )
+                        if distance > radius_km:
+                            continue
+                        candidate["distance_km"] = round(distance, 2)
                     distance_candidates.append(candidate)
 
         distance_candidates.sort(
