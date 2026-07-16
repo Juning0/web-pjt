@@ -41,6 +41,29 @@ const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" 
 </svg>`
 const PIN_IMAGE_SRC = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(PIN_SVG)}`
 
+// 잘못된 좌표 한 건이 전체 지도 범위를 한국 밖까지 넓히지 않도록 방어한다.
+// 대전여지도 데이터 범위(대전·충청)를 넉넉하게 포함하는 대한민국 영역이다.
+const KOREA_COORDINATE_BOUNDS = Object.freeze({
+  minLat: 33,
+  maxLat: 39,
+  minLng: 124,
+  maxLng: 132,
+})
+
+function getValidCoordinates(place) {
+  const lat = Number(place?.lat ?? place?.latitude)
+  const lng = Number(place?.lng ?? place?.longitude)
+  const isValid =
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= KOREA_COORDINATE_BOUNDS.minLat &&
+    lat <= KOREA_COORDINATE_BOUNDS.maxLat &&
+    lng >= KOREA_COORDINATE_BOUNDS.minLng &&
+    lng <= KOREA_COORDINATE_BOUNDS.maxLng
+
+  return isValid ? { lat, lng } : null
+}
+
 const mapContainer = ref(null)
 const loadError = ref('')
 const isMapReady = ref(false)
@@ -91,6 +114,10 @@ function toggleCategory(category) {
       ? selectedCategories.value.filter((item) => item !== category)
       : [...selectedCategories.value, category]
   }
+  if (isRouteFocusActive.value) {
+    // 카테고리를 직접 고르면 단일 장소 포커스에서 빠져나와 전체 목록을 본다.
+    router.replace({ name: 'map' })
+  }
   fetchPlaces()
 }
 
@@ -113,10 +140,12 @@ function closePlaceModal() {
 }
 
 function handleSelectLocation(source) {
-  const latitude = source.latitude ?? source.lat
-  const longitude = source.longitude ?? source.lng
-  if (!mapInstance || !kakaoRef || latitude == null || longitude == null) return
-  mapInstance.panTo(new kakaoRef.maps.LatLng(latitude, longitude))
+  const coordinates = getValidCoordinates(source)
+  if (!mapInstance || !kakaoRef || !coordinates) {
+    showLocateError('이 장소의 지도 좌표가 올바르지 않아요.')
+    return
+  }
+  mapInstance.panTo(new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng))
 }
 
 function firstQueryValue(value) {
@@ -160,6 +189,12 @@ async function focusRouteLocation() {
     return
   }
 
+  const coordinates = getValidCoordinates(place)
+  if (!coordinates) {
+    showLocateError('선택한 장소의 지도 좌표가 올바르지 않아요.')
+    return
+  }
+
   isRouteFocusActive.value = true
   focusedRoutePlace.value = place
   closePlaceModal()
@@ -167,7 +202,7 @@ async function focusRouteLocation() {
   await nextTick()
   mapInstance.relayout()
 
-  const position = new kakaoRef.maps.LatLng(place.lat, place.lng)
+  const position = new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng)
   const markerImage = new kakaoRef.maps.MarkerImage(
     PIN_IMAGE_SRC,
     new kakaoRef.maps.Size(32, 40),
@@ -201,7 +236,11 @@ function renderMarkers() {
   if (!mapInstance || !kakaoRef || !clusterer || isRouteFocusActive.value) return
   clearMarkers()
 
-  if (!visiblePlaces.value.length) return
+  const mappablePlaces = visiblePlaces.value
+    .map((place) => ({ place, coordinates: getValidCoordinates(place) }))
+    .filter((item) => item.coordinates)
+
+  if (!mappablePlaces.length) return
 
   const bounds = new kakaoRef.maps.LatLngBounds()
   const markerImage = new kakaoRef.maps.MarkerImage(
@@ -210,8 +249,8 @@ function renderMarkers() {
     { offset: new kakaoRef.maps.Point(16, 40) },
   )
 
-  visiblePlaces.value.forEach((place) => {
-    const position = new kakaoRef.maps.LatLng(place.lat, place.lng)
+  mappablePlaces.forEach(({ place, coordinates }) => {
+    const position = new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng)
     const marker = new kakaoRef.maps.Marker({ position, image: markerImage, title: place.title })
     kakaoRef.maps.event.addListener(marker, 'click', () => openPlace(place))
     markers.push(marker)
@@ -220,12 +259,20 @@ function renderMarkers() {
 
   clusterer.addMarkers(markers)
   // 가까이 붙어있는 마커는 클러스터로 묶이므로, 항상 보이는 마커 전체에 맞춰 지도 범위를 다시 잡는다.
-  mapInstance.setBounds(bounds)
+  if (markers.length === 1) {
+    mapInstance.setLevel(5)
+    mapInstance.panTo(markers[0].getPosition())
+  } else {
+    mapInstance.setBounds(bounds)
+  }
 }
 
 function focusPlace(place) {
-  if (mapInstance && kakaoRef) {
-    mapInstance.panTo(new kakaoRef.maps.LatLng(place.lat, place.lng))
+  const coordinates = getValidCoordinates(place)
+  if (mapInstance && kakaoRef && coordinates) {
+    mapInstance.panTo(new kakaoRef.maps.LatLng(coordinates.lat, coordinates.lng))
+  } else if (!coordinates) {
+    showLocateError('이 장소의 지도 좌표가 올바르지 않아요.')
   }
   openPlace(place)
 }
@@ -284,8 +331,12 @@ onMounted(async () => {
       ],
     })
     isMapReady.value = true
-    await fetchPlaces()
-    await focusRouteLocation()
+    if (routeLocation()) {
+      // 특정 장소를 보러 들어온 경우 전체 목록은 불러오지 않고 그 장소만 보여준다.
+      await focusRouteLocation()
+    } else {
+      await fetchPlaces()
+    }
   } catch (error) {
     loadError.value = error.message || '지도를 불러오지 못했어요.'
   }
@@ -684,7 +735,8 @@ watch(
 .locate-button {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  /* 챗봇 FAB(58px, bottom 28px)와 겹치지 않도록 그 위에 쌓는다. */
+  bottom: 96px;
   z-index: 10;
   display: grid;
   width: 42px;
@@ -919,6 +971,11 @@ watch(
   .route-focus-panel button {
     padding: 7px 9px;
     font-size: 10px;
+  }
+
+  .locate-button {
+    /* 모바일 챗봇 FAB(bottom: max(18px, safe-area))보다 위에 오도록 맞춘다. */
+    bottom: max(86px, calc(env(safe-area-inset-bottom) + 86px));
   }
 }
 </style>

@@ -88,7 +88,7 @@ const inputBox = ref(null)
 const activeStarters = computed(() => starters[mode.value])
 const placeholder = computed(() => {
   if (mode.value === 'posts') return '검색할 장소나 게시글 내용을 입력하세요'
-  if (mode.value === 'faq') return 'LocalHub 사용법을 물어보세요'
+  if (mode.value === 'faq') return '대전여지도 사용법을 물어보세요'
   return '어디로 떠나고 싶은지 물어보세요'
 })
 
@@ -313,8 +313,8 @@ function eventDateLabel(source) {
         key="launcher"
         class="chat-launcher"
         type="button"
-        aria-label="LocalHub 챗봇 열기"
-        title="LocalHub AI 여행 도우미"
+        aria-label="대전여지도 챗봇 열기"
+        title="대전여지도 AI 여행 도우미"
         @click="openChat"
       >
         <svg viewBox="0 0 32 32" aria-hidden="true">
@@ -332,7 +332,7 @@ function eventDateLabel(source) {
         class="chat-panel"
         role="dialog"
         aria-modal="false"
-        aria-label="LocalHub AI 여행 도우미"
+        aria-label="대전여지도 AI 여행 도우미"
       >
         <header class="chat-header">
           <div class="brand-mark" aria-hidden="true">
@@ -342,7 +342,7 @@ function eventDateLabel(source) {
           </div>
           <div class="header-copy">
             <div class="header-title-row">
-              <h2>LocalHub AI</h2>
+              <h2>대전여지도 AI</h2>
               <span class="status-dot" aria-label="온라인"></span>
             </div>
             <p>대전·충청 여행 도우미</p>
@@ -411,7 +411,7 @@ function eventDateLabel(source) {
                 v-if="message.engine"
                 :class="['engine-badge', { openai: message.engine === 'openai' }]"
               >
-                {{ message.engine === 'openai' ? 'GPT-5 mini' : 'LocalHub 데이터' }}
+                {{ message.engine === 'openai' ? 'GPT-5 mini' : '대전여지도 데이터' }}
               </span>
               <p
                 v-if="message.notice"
@@ -570,7 +570,7 @@ function eventDateLabel(source) {
             </svg>
           </button>
         </form>
-        <p class="chat-disclaimer">AI 답변은 LocalHub 제공 데이터를 기준으로 합니다.</p>
+        <p class="chat-disclaimer">AI 답변은 대전여지도 제공 데이터를 기준으로 합니다.</p>
       </section>
     </Transition>
   </Teleport>

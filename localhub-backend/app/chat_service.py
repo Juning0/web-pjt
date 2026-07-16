@@ -56,10 +56,10 @@ FAQ_MARKERS = (
 )
 
 SYSTEM_INSTRUCTIONS = """
-당신은 대전·충청권 지역 정보 서비스 'LocalHub'의 한국어 안내 챗봇이다.
+당신은 대전·충청권 지역 정보 서비스 '대전여지도'의 한국어 안내 챗봇이다.
 
 반드시 아래 규칙을 지킨다.
-1. 현재 사용자 질문을 이전 대화보다 우선하고, 제공된 LocalHub 검색 결과 JSON 안의 사실만 사용한다.
+1. 현재 사용자 질문을 이전 대화보다 우선하고, 제공된 대전여지도 검색 결과 JSON 안의 사실만 사용한다.
 2. 현재 검색 결과에 없는 이전 장소를 반복해서 추천하지 않는다.
 3. 장소명, 주소, 평점, 리뷰 수, 게시글 내용은 임의로 만들거나 추측하지 않는다.
 4. rating이 null이면 '평점 정보 없음' 또는 '아직 등록된 평점이 없음'이라고 표현한다.
@@ -74,7 +74,7 @@ SYSTEM_INSTRUCTIONS = """
 """.strip()
 
 INTENT_INSTRUCTIONS = """
-당신은 LocalHub 관광 챗봇의 검색 의도 분석기다. 사용자의 현재 질문과 최근 대화에서 검색 조건만 추출한다.
+당신은 대전여지도 관광 챗봇의 검색 의도 분석기다. 사용자의 현재 질문과 최근 대화에서 검색 조건만 추출한다.
 
 - mode는 장소 검색/추천이면 recommend, 커뮤니티 글이나 후기를 찾으면 posts, 서비스 사용법 질문이면 faq다.
 - categories는 다음 값만 사용한다: 관광지, 레포츠, 문화시설, 쇼핑, 숙박, 여행코스, 음식점, 축제공연행사.
@@ -316,7 +316,7 @@ class ChatService:
             + ("\n".join(history_lines) if history_lines else "(없음)")
             + "\n\n현재 사용자 질문:\n"
             + request.message.strip()
-            + "\n\n현재 질문용 LocalHub 검색 결과(JSON):\n"
+            + "\n\n현재 질문용 대전여지도 검색 결과(JSON):\n"
             + json.dumps(context, ensure_ascii=False, indent=2)
         )
         response = await self.openai_client.responses.create(
@@ -353,7 +353,7 @@ class ChatService:
                 "festival_start_end_dates_available": any(
                     item.get("start_date") or item.get("end_date") for item in locations
                 ),
-                "ratings_source": "LocalHub 사용자 게시글",
+                "ratings_source": "대전여지도 사용자 게시글",
                 "empty_rating_meaning": "아직 등록된 평점이 없음",
                 "sejong_records_available": False,
             },
@@ -403,7 +403,7 @@ class ChatService:
             parts.append("현재 제공된 JSON에는 세종 지역 데이터가 없어 장소를 안내할 수 없어요.")
         elif intent.categories or intent.regions or intent.keywords:
             condition = " ".join([*intent.regions, *intent.categories, *intent.keywords]).strip()
-            parts.append(f"현재 제공된 LocalHub 데이터에서 '{condition}' 조건의 장소를 찾지 못했어요.")
+            parts.append(f"현재 제공된 대전여지도 데이터에서 '{condition}' 조건의 장소를 찾지 못했어요.")
 
         is_event_query = "축제공연행사" in intent.categories
         if (intent.wants_schedule or is_event_query) and not any(
@@ -426,7 +426,7 @@ class ChatService:
         if not parts:
             return (
                 "제가 확인할 수 있는 범위는 대전·충청권 관광지, 음식점, 숙박, 문화시설, "
-                "레포츠, 쇼핑, 여행코스, 축제·행사와 LocalHub 게시글이에요. "
+                "레포츠, 쇼핑, 여행코스, 축제·행사와 대전여지도 게시글이에요. "
                 "예: '대전에서 잘 곳 알려줘'"
             )
         return "\n\n".join(parts)

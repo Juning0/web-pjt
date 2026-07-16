@@ -242,14 +242,6 @@ async function submitReview() {
             </template>
             <p v-else-if="loading" class="loading-text">불러오는 중...</p>
             <template v-else-if="location">
-              <span class="category-pill">{{ location.category }}</span>
-              <h2 class="place-title">{{ location.title }}</h2>
-
-              <div class="rating-row">
-                <span class="stars">{{ starDisplay }}</span>
-                <span class="rating-label">{{ ratingLabel }}</span>
-              </div>
-
               <div class="photo-frame">
                 <img
                   v-if="location.first_image"
@@ -265,6 +257,14 @@ async function submitReview() {
                   </svg>
                   <p>이미지가 제공되지 않는 장소입니다.</p>
                 </div>
+                <span class="category-badge">{{ location.category }}</span>
+              </div>
+
+              <h2 class="place-title">{{ location.title }}</h2>
+
+              <div class="rating-row">
+                <span class="stars">{{ starDisplay }}</span>
+                <span class="rating-label">{{ ratingLabel }}</span>
               </div>
 
               <dl class="info-list">
@@ -288,7 +288,7 @@ async function submitReview() {
                 type="button"
                 @click="handleViewOnMap"
               >
-                지도에서 보기
+                지도에서 보기 →
               </button>
 
               <div class="reviews-list-section">
@@ -415,8 +415,8 @@ async function submitReview() {
   --purple-soft: #f1edff;
   --star: #e9a900;
   display: flex;
-  width: min(480px, 100%);
-  max-height: min(760px, calc(100dvh - 48px));
+  width: min(580px, 100%);
+  max-height: min(840px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--ink);
   font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -432,7 +432,6 @@ async function submitReview() {
   padding: 8px 10px;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--line);
 }
 
 .icon-button {
@@ -468,63 +467,71 @@ async function submitReview() {
 }
 
 .modal-body {
-  padding: 18px 20px 24px;
+  padding: 20px 26px 28px;
   overflow-y: auto;
 }
 
 .loading-text {
   padding: 40px 0;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 14px;
   text-align: center;
 }
 
-.category-pill {
-  display: inline-block;
-  padding: 5px 11px;
-  color: var(--purple);
-  font-size: 11px;
-  font-weight: 750;
-  background: var(--purple-soft);
-  border-radius: 999px;
-}
-
 .place-title {
-  margin: 12px 0 0;
-  font-size: 21px;
+  margin: 14px 0 0;
+  font-size: 23px;
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .rating-row {
   display: flex;
-  margin-top: 8px;
-  gap: 8px;
+  margin-top: 9px;
+  gap: 9px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .stars {
   color: var(--star);
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: 1px;
 }
 
 .rating-label {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 650;
 }
 
 .photo-frame {
+  position: relative;
+  display: flex;
   width: 100%;
   height: 220px;
-  margin-top: 16px;
+  padding: 10px;
   overflow: hidden;
+  align-items: flex-end;
   background: var(--soft);
-  border-radius: 12px;
+  border-radius: 14px;
+}
+
+.category-badge {
+  position: relative;
+  z-index: 1;
+  padding: 5px 9px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #29272e;
+  border-radius: 999px;
 }
 
 .photo-frame img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -532,6 +539,9 @@ async function submitReview() {
 }
 
 .photo-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: flex;
   width: 100%;
   height: 100%;
@@ -555,12 +565,12 @@ async function submitReview() {
 .photo-placeholder p {
   margin: 0;
   color: #98949e;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .info-list {
-  margin: 16px 0 0;
+  margin: 18px 0 0;
   padding: 0;
 }
 
@@ -568,7 +578,7 @@ async function submitReview() {
   display: flex;
   margin-top: 6px;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 14px;
 }
 
 .info-row dt {
@@ -586,18 +596,18 @@ async function submitReview() {
   width: 100%;
   min-height: 42px;
   margin-top: 16px;
-  color: var(--ink);
+  color: var(--purple);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 700;
-  background: #fff;
-  border: 1px solid #cbc8d1;
+  background: var(--purple-soft);
+  border: 1px solid transparent;
   border-radius: 9px;
   cursor: pointer;
 }
 
 .map-button:hover {
-  border-color: #9a95a2;
+  border-color: var(--purple);
 }
 
 .reviews-list-section {
@@ -609,7 +619,7 @@ async function submitReview() {
 .reviews-heading {
   margin: 0 0 10px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14.5px;
   font-weight: 750;
 }
 
@@ -617,7 +627,7 @@ async function submitReview() {
   margin: 0;
   padding: 10px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .reviews-list {
@@ -649,20 +659,20 @@ async function submitReview() {
 
 .review-stars {
   color: var(--star);
-  font-size: 12px;
+  font-size: 13.5px;
   letter-spacing: 1px;
 }
 
 .review-date {
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .review-item-title {
   margin: 4px 0 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -679,7 +689,7 @@ async function submitReview() {
   min-height: 42px;
   color: #fff;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 750;
   background: var(--ink);
   border: 0;
@@ -704,7 +714,7 @@ async function submitReview() {
   height: 30px;
   padding: 0;
   color: #d8d5db;
-  font-size: 20px;
+  font-size: 21px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -720,7 +730,7 @@ async function submitReview() {
   padding: 10px 11px;
   color: var(--ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   background: #fff;
   border: 1px solid #cbc8d0;
   border-radius: 9px;
@@ -744,7 +754,7 @@ async function submitReview() {
   padding: 0 14px;
   color: var(--purple);
   font: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   white-space: nowrap;
   background: var(--purple-soft);
@@ -761,7 +771,7 @@ async function submitReview() {
   min-height: 42px;
   color: #fff;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 750;
   background: var(--purple);
   border: 0;
@@ -777,13 +787,13 @@ async function submitReview() {
 .form-error {
   margin: 0;
   color: #9b2f2f;
-  font-size: 11.5px;
+  font-size: 13px;
 }
 
 .submit-success {
   margin: 14px 0 0;
   color: #2f8f5b;
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 650;
 }
 

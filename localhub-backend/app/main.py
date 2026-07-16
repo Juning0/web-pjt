@@ -10,7 +10,7 @@ from app.routers import chat, comments, locations, posts
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="LocalHub API",
+    title="대전여지도 API",
     description="대전/충청권 지역 정보 공유 커뮤니티 백엔드",
     version="0.2.0",
 )
@@ -33,7 +33,7 @@ app.include_router(chat.router)
 def health():
     return {
         "status": "ok",
-        "service": "LocalHub API",
+        "service": "대전여지도 API",
         "docs": "/docs",
         "chat_health": "/api/chat/health",
     }

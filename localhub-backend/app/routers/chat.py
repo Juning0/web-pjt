@@ -45,7 +45,7 @@ async def health_check() -> HealthResponse:
         locations_loaded=len(data_service.locations),
         openai_configured=bool(settings.OPENAI_API_KEY.strip()),
         model=ALLOWED_MODEL,
-        data_source="bundled JSON + LocalHub SQLite",
+        data_source="bundled JSON + 대전여지도 SQLite",
     )
 
 

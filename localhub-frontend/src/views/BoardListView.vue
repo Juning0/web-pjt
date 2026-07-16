@@ -34,7 +34,6 @@ const queryCategories = typeof route.query.category === 'string' ? route.query.c
 const selectedCategories = ref(queryCategories.filter((category) => CATEGORIES.includes(category)))
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const selectedLocationFilter = ref(null)
-const isSearchOpen = ref(Boolean(keyword.value))
 const sortOption = ref('latest')
 
 watch(
@@ -48,7 +47,6 @@ watch(
     )
 
     keyword.value = typeof keywordQuery === 'string' ? keywordQuery : ''
-    isSearchOpen.value = Boolean(keyword.value)
 
     fetchPosts()
   },
@@ -67,14 +65,6 @@ function toggleCategory(category) {
   selectedCategories.value = isCategoryActive(category)
     ? selectedCategories.value.filter((item) => item !== category)
     : [...selectedCategories.value, category]
-}
-
-function toggleSearch() {
-  isSearchOpen.value = !isSearchOpen.value
-  if (!isSearchOpen.value) {
-    keyword.value = ''
-    selectedLocationFilter.value = null
-  }
 }
 
 function formatDate(value) {
@@ -97,6 +87,9 @@ const filteredPosts = computed(() => {
   const sorted = [...filtered]
   if (sortOption.value === 'views') {
     sorted.sort((a, b) => b.view_count - a.view_count)
+  } else if (sortOption.value === 'rating') {
+    // 평점 없는 글은 뒤로 밀린다.
+    sorted.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
   } else {
     sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   }
@@ -201,28 +194,10 @@ function handlePostCreated(newPost) {
         </svg>
       </RouterLink>
       <h1>게시판</h1>
-      <button
-        class="icon-button"
-        type="button"
-        aria-label="검색"
-        :aria-pressed="isSearchOpen"
-        @click="toggleSearch"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="11" cy="11" r="6.5" />
-          <path d="m16 16 4 4" />
-        </svg>
-      </button>
+      <span class="header-spacer" aria-hidden="true"></span>
     </header>
 
-    <div v-if="isSearchOpen" class="board-search">
-      <input
-        v-model="keyword"
-        type="search"
-        placeholder="게시글 제목을 검색해 보세요"
-        aria-label="게시글 검색"
-        autofocus
-      />
+    <div class="board-search">
       <LocationSearchInput v-model="selectedLocationFilter" placeholder="장소명으로 검색해 보세요" />
     </div>
 
@@ -251,6 +226,7 @@ function handlePostCreated(newPost) {
       <select v-model="sortOption" aria-label="정렬 방식">
         <option value="latest">최신순</option>
         <option value="views">조회순</option>
+        <option value="rating">평점순</option>
       </select>
     </div>
 
@@ -268,9 +244,13 @@ function handlePostCreated(newPost) {
           <div class="post-pill-row">
             <span class="post-category">{{ post.category }}</span>
             <span v-if="post.location_title" class="post-location">📍 {{ post.location_title }}</span>
+            <span v-if="post.rating != null" class="post-rating">★ {{ post.rating.toFixed(1) }}</span>
           </div>
           <h3>{{ post.title }}</h3>
           <small>조회 {{ post.view_count.toLocaleString() }} · {{ formatDate(post.created_at) }}</small>
+        </div>
+        <div v-if="post.location_image" class="post-thumb">
+          <img :src="post.location_image" :alt="`${post.location_title} 사진`" loading="lazy" />
         </div>
       </article>
     </div>
@@ -353,6 +333,10 @@ function handlePostCreated(newPost) {
   text-align: center;
 }
 
+.header-spacer {
+  width: 38px;
+}
+
 .icon-button {
   display: grid;
   width: 38px;
@@ -387,25 +371,8 @@ function handlePostCreated(newPost) {
   flex-direction: column;
 }
 
-.board-search input {
-  width: 100%;
-  min-height: 46px;
-  padding: 0 16px;
-  color: #29272e;
-  font: inherit;
-  font-size: 13px;
-  background: #fff;
-  border: 1px solid #cbc8d0;
-  border-radius: 10px;
-  outline: 0;
-}
-
-.board-search input:focus {
-  border-color: #7e66e2;
-}
-
 .board-page .category-chips {
-  justify-content: center;
+  justify-content: flex-start;
   margin-bottom: 20px;
 }
 
@@ -441,6 +408,7 @@ function handlePostCreated(newPost) {
 }
 
 .post-card {
+  display: flex;
   overflow: hidden;
   cursor: pointer;
   background: #fff;
@@ -455,7 +423,23 @@ function handlePostCreated(newPost) {
 }
 
 .post-body {
+  min-width: 0;
   padding: 16px;
+  flex: 1;
+}
+
+.post-thumb {
+  overflow: hidden;
+  width: 92px;
+  flex: 0 0 auto;
+  background-color: #f4f2f7;
+}
+
+.post-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .post-pill-row {
@@ -485,6 +469,16 @@ function handlePostCreated(newPost) {
   text-overflow: ellipsis;
   white-space: nowrap;
   background: #f4f2f7;
+  border-radius: 999px;
+}
+
+.post-rating {
+  display: inline-block;
+  padding: 4px 10px;
+  color: #a9760a;
+  font-size: 10px;
+  font-weight: 750;
+  background: #fdf1dc;
   border-radius: 999px;
 }
 
@@ -611,6 +605,46 @@ function handlePostCreated(newPost) {
   .write-fab {
     right: 18px;
     bottom: max(90px, calc(env(safe-area-inset-bottom) + 90px));
+  }
+}
+
+@media (min-width: 761px) {
+  .board-topbar h1 {
+    font-size: 23px;
+  }
+
+  .board-meta > span {
+    font-size: 14px;
+  }
+
+  .board-meta select {
+    font-size: 13.5px;
+  }
+
+  .post-category,
+  .post-location,
+  .post-rating {
+    font-size: 11.5px;
+  }
+
+  .post-body h3 {
+    font-size: 16px;
+  }
+
+  .post-body small {
+    font-size: 12px;
+  }
+
+  .post-empty {
+    font-size: 14px;
+  }
+
+  .pagination-count {
+    font-size: 14px;
+  }
+
+  .write-fab {
+    font-size: 14px;
   }
 }
 </style>

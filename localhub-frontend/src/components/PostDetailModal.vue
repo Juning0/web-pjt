@@ -109,8 +109,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
   --star: #e9a900;
   position: relative;
   display: flex;
-  width: min(480px, 100%);
-  max-height: min(760px, calc(100dvh - 48px));
+  width: min(580px, 100%);
+  max-height: min(840px, calc(100dvh - 48px));
   overflow: hidden;
   color: var(--ink);
   font-family: Pretendard, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -157,7 +157,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 }
 
 .modal-body {
-  padding: 18px 20px 24px;
+  padding: 20px 26px 28px;
   overflow-y: auto;
 }
 

@@ -120,9 +120,9 @@ provide('showIntegrationEvent', openLocationFromChat)
 <template>
   <div class="site-shell">
     <header class="site-header">
-      <RouterLink class="site-logo" to="/" aria-label="LocalHub 홈">
+      <RouterLink class="site-logo" to="/" aria-label="대전여지도 홈">
         <span class="logo-pin" aria-hidden="true"></span>
-        <strong>LocalHub</strong>
+        <strong>대전여지도</strong>
       </RouterLink>
       <nav aria-label="주요 메뉴">
         <RouterLink to="/explore">둘러보기</RouterLink>
