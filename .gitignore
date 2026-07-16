@@ -1,0 +1,21 @@
+# 환경변수 (RFP: 절대 커밋 금지)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# SQLite (실행 환경에서 python seed.py로 생성)
+*.db
+*.db-shm
+*.db-wal
+
+# Vue / Vite
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
